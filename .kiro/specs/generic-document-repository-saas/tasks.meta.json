@@ -1,0 +1,335 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Initialize FastAPI project structure, dependency management, and configuration": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798816752
+      },
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798841953
+      },
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784799837966
+      }
+    ],
+    "1.2 Create database migrations for all core tables": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798818694
+      },
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784799844230
+      }
+    ],
+    "1.3 Implement SQLAlchemy async models and database session middleware": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798819083
+      }
+    ],
+    "2.1 Implement OAuth 2.0 client credentials flow and JWT issuance": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798819326
+      }
+    ],
+    "2.4 Implement OTP-based authentication for beneficiaries": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798819696
+      }
+    ],
+    "2.6 Implement MFA (TOTP) for admin accounts": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798819957
+      }
+    ],
+    "2.8 Implement account lockout logic": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798820314
+      }
+    ],
+    "3. Checkpoint — Ensure all auth tests pass": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798820568
+      }
+    ],
+    "4.1 Implement RBAC permission enforcement middleware": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798820784
+      }
+    ],
+    "4.3 Implement global error response format and HTTP 422 validation handler": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798820977
+      }
+    ],
+    "4.5 Implement tenant status middleware (suspension / deactivation guards)": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798821154
+      }
+    ],
+    "5.1 Implement per-tenant Redis token-bucket rate limiter": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798821365
+      }
+    ],
+    "6.1 Implement tenant onboarding and lifecycle management": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798821641
+      }
+    ],
+    "6.4 Implement per-tenant quota and rate limit configuration": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798821901
+      }
+    ],
+    "6.5 Implement API key rotation with grace period": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798822233
+      }
+    ],
+    "7. Checkpoint — Ensure all tenant and auth tests pass": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798822432
+      }
+    ],
+    "8.1 Implement document schema CRUD with field validation": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798822652
+      }
+    ],
+    "8.4 Implement schema version management and breaking-change detection": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798822843
+      }
+    ],
+    "8.7 Implement schema JSON export endpoint": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798823028
+      }
+    ],
+    "9.1 Implement per-tenant envelope encryption using AWS KMS": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798823223
+      }
+    ],
+    "10.1 Implement append-only audit log service": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798823408
+      }
+    ],
+    "10.5 Implement audit log export (JSON and CSV)": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798823613
+      }
+    ],
+    "11. Checkpoint — Ensure all schema, encryption, and audit log tests pass": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798823991
+      }
+    ],
+    "12.1 Implement single document upload endpoint": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798824202
+      }
+    ],
+    "12.5 Implement document retrieval and download endpoints": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798824416
+      }
+    ],
+    "12.9 Implement document revocation endpoint": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798824632
+      }
+    ],
+    "12.13 Implement bulk revocation endpoint": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798824845
+      }
+    ],
+    "13.1 Implement bulk upload API endpoint and job creation": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798825109
+      }
+    ],
+    "13.3 Implement Celery worker for bulk record processing": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798825388
+      }
+    ],
+    "14. Checkpoint — Ensure all document service and bulk upload tests pass": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798825590
+      }
+    ],
+    "15.1 Implement verification token generation": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798825781
+      }
+    ],
+    "15.3 Implement verification token consumption endpoint": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798825956
+      }
+    ],
+    "15.6 Implement public verification endpoints": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798826140
+      }
+    ],
+    "16.1 Implement per-tenant document search API": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798826331
+      }
+    ],
+    "17.1 Implement event-driven notification delivery": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798826519
+      }
+    ],
+    "17.3 Implement notification preference management endpoints": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798826716
+      }
+    ],
+    "18. Checkpoint — Ensure all verification, search, and notification tests pass": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798826941
+      }
+    ],
+    "19.1 Implement webhook registry and event delivery": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798827145
+      }
+    ],
+    "20.1 Implement DigiLocker async push with retry logic": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798827322
+      }
+    ],
+    "21.1 Implement file malware scan integration": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798827515
+      }
+    ],
+    "22.1 Implement anomalous access pattern detection and alerting": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798827710
+      }
+    ],
+    "23.1 Configure and expose OpenAPI 3.0 specification": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798827894
+      }
+    ],
+    "24. Checkpoint — Ensure all service tests pass end-to-end": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798828101
+      }
+    ],
+    "25.1 Set up Hypothesis configuration and shared test strategies": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798828327
+      }
+    ],
+    "27. Final checkpoint — Full test suite passes": [
+      {
+        "executionId": "a5a2100e-7f34-4e8d-988f-cbd2467eb71a",
+        "chatSessionId": "sess_55e149ad-23d0-4e17-990d-31d61fe16fae",
+        "timestamp": 1784798828504
+      }
+    ]
+  }
+}
