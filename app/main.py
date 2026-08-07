@@ -25,6 +25,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.errors.handlers import register_exception_handlers
+from app.routers import auth as auth_router
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +80,12 @@ def create_app() -> FastAPI:
     )
 
     # ------------------------------------------------------------------
-    # Routers  (additional routers registered in subsequent tasks)
+    # Exception handlers
+    # ------------------------------------------------------------------
+    register_exception_handlers(app)
+
+    # ------------------------------------------------------------------
+    # Routers
     # ------------------------------------------------------------------
     _register_routes(app, settings)
 
@@ -115,11 +122,8 @@ def _register_routes(app: FastAPI, settings) -> None:  # noqa: ANN001
             },
         )
 
-    # Versioned API routers will be included here in subsequent tasks, e.g.:
-    #   from app.routers import auth, tenants, schemas, documents
-    #   app.include_router(auth.router, prefix=settings.api_v1_prefix)
-    #   app.include_router(tenants.router, prefix=settings.api_v1_prefix)
-    #   ...
+    # Versioned API routers
+    app.include_router(auth_router.router, prefix=settings.api_v1_prefix)
 
 
 # ---------------------------------------------------------------------------
