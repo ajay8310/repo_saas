@@ -1,0 +1,82 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.2.0, pluggy-1.6.0 -- C:\repo_as_service\repo_saas\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default' -> database=DirectoryBasedExampleDatabase(WindowsPath('C:/repo_as_service/repo_saas/.hypothesis/examples'))
+rootdir: C:\repo_as_service\repo_saas
+configfile: pyproject.toml
+plugins: anyio-4.3.0, hypothesis-6.100.2, asyncio-0.23.6, cov-5.0.0, mock-3.14.0
+asyncio: mode=Mode.AUTO
+collecting ... collected 43 items
+
+tests/unit/test_config.py::TestRequiredFields::test_missing_database_url_raises FAILED [  2%]
+tests/unit/test_config.py::TestRequiredFields::test_missing_redis_url_raises FAILED [  4%]
+tests/unit/test_config.py::TestRequiredFields::test_missing_s3_bucket_raises FAILED [  6%]
+tests/unit/test_config.py::TestRequiredFields::test_missing_jwt_private_key_raises FAILED [  9%]
+tests/unit/test_config.py::TestRequiredFields::test_missing_jwt_public_key_raises FAILED [ 11%]
+tests/unit/test_config.py::TestDefaults::test_jwt_access_token_expire_seconds_default PASSED [ 13%]
+tests/unit/test_config.py::TestDefaults::test_otp_ttl_default_is_600 PASSED [ 16%]
+tests/unit/test_config.py::TestDefaults::test_rate_limit_default PASSED  [ 18%]
+tests/unit/test_config.py::TestDefaults::test_rate_limit_window_default PASSED [ 20%]
+tests/unit/test_config.py::TestDefaults::test_bulk_upload_max_records_default PASSED [ 23%]
+tests/unit/test_config.py::TestDefaults::test_audit_log_retention_default_is_7_years PASSED [ 25%]
+tests/unit/test_config.py::TestDefaults::test_verification_token_default_expiry PASSED [ 27%]
+tests/unit/test_config.py::TestDefaults::test_max_failed_auth_attempts_default PASSED [ 30%]
+tests/unit/test_config.py::TestDefaults::test_auth_lockout_minutes_default PASSED [ 32%]
+tests/unit/test_config.py::TestDefaults::test_max_failed_mfa_attempts_default PASSED [ 34%]
+tests/unit/test_config.py::TestDefaults::test_mfa_lockout_minutes_default PASSED [ 37%]
+tests/unit/test_config.py::TestDefaults::test_environment_default_is_development PASSED [ 39%]
+tests/unit/test_config.py::TestDefaults::test_api_v1_prefix_default PASSED [ 41%]
+tests/unit/test_config.py::TestDefaults::test_jwt_algorithm_default PASSED [ 44%]
+tests/unit/test_config.py::TestBounds::test_jwt_expiry_cannot_exceed_3600 PASSED [ 46%]
+tests/unit/test_config.py::TestBounds::test_jwt_expiry_minimum_60 PASSED [ 48%]
+tests/unit/test_config.py::TestBounds::test_otp_ttl_maximum_600 PASSED   [ 51%]
+tests/unit/test_config.py::TestBounds::test_audit_log_retention_minimum_1 PASSED [ 53%]
+tests/unit/test_config.py::TestBounds::test_audit_log_retention_maximum_99 PASSED [ 55%]
+tests/unit/test_config.py::TestBounds::test_verification_token_max_expiry_168 PASSED [ 58%]
+tests/unit/test_config.py::TestBounds::test_db_pool_size_minimum_1 PASSED [ 60%]
+tests/unit/test_config.py::TestCeleryDefaults::test_celery_broker_defaults_to_redis_url PASSED [ 62%]
+tests/unit/test_config.py::TestCeleryDefaults::test_celery_backend_defaults_to_redis_url PASSED [ 65%]
+tests/unit/test_config.py::TestCeleryDefaults::test_celery_broker_can_be_overridden PASSED [ 67%]
+tests/unit/test_config.py::TestGetSettingsSingleton::test_returns_settings_instance PASSED [ 69%]
+tests/unit/test_config.py::TestGetSettingsSingleton::test_cached_instance_is_same_object PASSED [ 72%]
+tests/unit/test_main.py::TestHealthCheck::test_returns_200 PASSED        [ 74%]
+tests/unit/test_main.py::TestHealthCheck::test_content_type_is_json PASSED [ 76%]
+tests/unit/test_main.py::TestHealthCheck::test_body_contains_status_ok PASSED [ 79%]
+tests/unit/test_main.py::TestHealthCheck::test_body_contains_service_name PASSED [ 81%]
+tests/unit/test_main.py::TestHealthCheck::test_body_contains_environment PASSED [ 83%]
+tests/unit/test_main.py::TestHealthCheck::test_body_contains_timestamp PASSED [ 86%]
+tests/unit/test_main.py::TestOpenAPISpec::test_openapi_json_accessible PASSED [ 88%]
+tests/unit/test_main.py::TestOpenAPISpec::test_openapi_version_is_3x PASSED [ 90%]
+tests/unit/test_main.py::TestOpenAPISpec::test_openapi_has_info_title PASSED [ 93%]
+tests/unit/test_main.py::TestCORSMiddleware::test_preflight_returns_cors_headers PASSED [ 95%]
+tests/unit/test_main.py::TestAppMetadata::test_app_has_correct_title PASSED [ 97%]
+tests/unit/test_main.py::TestAppMetadata::test_api_prefix_matches_settings PASSED [100%]
+
+================================== FAILURES ===================================
+_____________ TestRequiredFields.test_missing_database_url_raises _____________
+tests\unit\test_config.py:37: in test_missing_database_url_raises
+    with pytest.raises(ValidationError) as exc_info:
+E   Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+______________ TestRequiredFields.test_missing_redis_url_raises _______________
+tests\unit\test_config.py:43: in test_missing_redis_url_raises
+    with pytest.raises(ValidationError) as exc_info:
+E   Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+______________ TestRequiredFields.test_missing_s3_bucket_raises _______________
+tests\unit\test_config.py:49: in test_missing_s3_bucket_raises
+    with pytest.raises(ValidationError) as exc_info:
+E   Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+___________ TestRequiredFields.test_missing_jwt_private_key_raises ____________
+tests\unit\test_config.py:55: in test_missing_jwt_private_key_raises
+    with pytest.raises(ValidationError) as exc_info:
+E   Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+____________ TestRequiredFields.test_missing_jwt_public_key_raises ____________
+tests\unit\test_config.py:61: in test_missing_jwt_public_key_raises
+    with pytest.raises(ValidationError) as exc_info:
+E   Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+=========================== short test summary info ===========================
+FAILED tests/unit/test_config.py::TestRequiredFields::test_missing_database_url_raises
+FAILED tests/unit/test_config.py::TestRequiredFields::test_missing_redis_url_raises
+FAILED tests/unit/test_config.py::TestRequiredFields::test_missing_s3_bucket_raises
+FAILED tests/unit/test_config.py::TestRequiredFields::test_missing_jwt_private_key_raises
+FAILED tests/unit/test_config.py::TestRequiredFields::test_missing_jwt_public_key_raises
+======================== 5 failed, 38 passed in 1.75s =========================

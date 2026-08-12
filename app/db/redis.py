@@ -10,23 +10,28 @@ Usage in service layer:
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import AsyncGenerator
 
 import redis.asyncio as aioredis
 
-from app.config import get_settings
-
-settings = get_settings()
 
 # ---------------------------------------------------------------------------
-# Connection pool (shared across the application lifetime)
+# Lazy pool initialization (avoids import-time Settings resolution)
 # ---------------------------------------------------------------------------
 
-_pool = aioredis.ConnectionPool.from_url(
-    settings.redis_url,
-    max_connections=settings.redis_pool_size,
-    decode_responses=True,
-)
+
+@lru_cache(maxsize=1)
+def _get_pool() -> aioredis.ConnectionPool:
+    """Create and cache the Redis connection pool on first use."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    return aioredis.ConnectionPool.from_url(
+        settings.redis_url,
+        max_connections=settings.redis_pool_size,
+        decode_responses=True,
+    )
 
 
 def get_redis_client() -> aioredis.Redis:
@@ -35,7 +40,7 @@ def get_redis_client() -> aioredis.Redis:
     This is NOT an async generator — it returns a reusable client instance.
     The pool handles connection lifecycle.
     """
-    return aioredis.Redis(connection_pool=_pool)
+    return aioredis.Redis(connection_pool=_get_pool())
 
 
 async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:

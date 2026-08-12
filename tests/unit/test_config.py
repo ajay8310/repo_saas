@@ -32,34 +32,57 @@ VALID_BASE = {
 class TestRequiredFields:
     """Missing required fields should raise ValidationError."""
 
-    def test_missing_database_url_raises(self) -> None:
+    # Environment variables that test_main.py sets at module level.
+    # We must clear all of them to properly test required-field validation.
+    _ENV_KEYS = [
+        "DATABASE_URL", "REDIS_URL", "S3_BUCKET_NAME",
+        "JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY",
+    ]
+
+    def _make_without_env(self, monkeypatch, **overrides) -> Settings:
+        """Create Settings with all env sources disabled."""
+        for key in self._ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        return Settings(_env_file=None, **overrides)
+
+    def test_missing_database_url_raises(self, monkeypatch) -> None:
         cfg = {k: v for k, v in VALID_BASE.items() if k != "database_url"}
+        for key in self._ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
         with pytest.raises(ValidationError) as exc_info:
-            Settings(**cfg)
+            Settings(_env_file=None, **cfg)
         assert "database_url" in str(exc_info.value)
 
-    def test_missing_redis_url_raises(self) -> None:
+    def test_missing_redis_url_raises(self, monkeypatch) -> None:
         cfg = {k: v for k, v in VALID_BASE.items() if k != "redis_url"}
+        for key in self._ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
         with pytest.raises(ValidationError) as exc_info:
-            Settings(**cfg)
+            Settings(_env_file=None, **cfg)
         assert "redis_url" in str(exc_info.value)
 
-    def test_missing_s3_bucket_raises(self) -> None:
+    def test_missing_s3_bucket_raises(self, monkeypatch) -> None:
         cfg = {k: v for k, v in VALID_BASE.items() if k != "s3_bucket_name"}
+        for key in self._ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
         with pytest.raises(ValidationError) as exc_info:
-            Settings(**cfg)
+            Settings(_env_file=None, **cfg)
         assert "s3_bucket_name" in str(exc_info.value)
 
-    def test_missing_jwt_private_key_raises(self) -> None:
+    def test_missing_jwt_private_key_raises(self, monkeypatch) -> None:
         cfg = {k: v for k, v in VALID_BASE.items() if k != "jwt_private_key"}
+        for key in self._ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
         with pytest.raises(ValidationError) as exc_info:
-            Settings(**cfg)
+            Settings(_env_file=None, **cfg)
         assert "jwt_private_key" in str(exc_info.value)
 
-    def test_missing_jwt_public_key_raises(self) -> None:
+    def test_missing_jwt_public_key_raises(self, monkeypatch) -> None:
         cfg = {k: v for k, v in VALID_BASE.items() if k != "jwt_public_key"}
+        for key in self._ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
         with pytest.raises(ValidationError) as exc_info:
-            Settings(**cfg)
+            Settings(_env_file=None, **cfg)
         assert "jwt_public_key" in str(exc_info.value)
 
 

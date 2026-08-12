@@ -27,6 +27,14 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.errors.handlers import register_exception_handlers
 from app.routers import auth as auth_router
+from app.routers import tenants as tenants_router
+from app.routers import schemas as schemas_router
+from app.routers import documents as documents_router
+from app.routers import verification as verification_router
+from app.routers import search as search_router
+from app.routers import notifications as notifications_router
+from app.routers import webhooks as webhooks_router
+from app.routers import audit as audit_router
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +77,21 @@ def create_app() -> FastAPI:
     )
 
     # ------------------------------------------------------------------
-    # Middleware
+    # Middleware (order matters: last registered = first to execute)
     # ------------------------------------------------------------------
+    from app.middleware.rate_limit import RateLimitMiddleware
+    from app.middleware.tenant_context import TenantContextMiddleware
+
+    # Rate limiter runs after tenant context is established
+    app.add_middleware(
+        RateLimitMiddleware,
+        default_limit=settings.rate_limit_default_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+
+    # Tenant context middleware sets RLS and checks tenant status
+    app.add_middleware(TenantContextMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allowed_origins,
@@ -124,6 +145,14 @@ def _register_routes(app: FastAPI, settings) -> None:  # noqa: ANN001
 
     # Versioned API routers
     app.include_router(auth_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(tenants_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(schemas_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(documents_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(verification_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(search_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(notifications_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(webhooks_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(audit_router.router, prefix=settings.api_v1_prefix)
 
 
 # ---------------------------------------------------------------------------

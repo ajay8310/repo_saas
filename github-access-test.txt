@@ -1,2 +1,0 @@
-This file tests GitHub push access from Kiro IDE.
-Created: 2026-08-05
