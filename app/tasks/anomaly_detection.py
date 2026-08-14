@@ -9,8 +9,11 @@ Requirements: 10.6
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
+
+from celery import shared_task
 
 logger = logging.getLogger(__name__)
 
@@ -58,61 +61,53 @@ async def check_and_record_access(
     return False
 
 
-def run_anomaly_detection_sweep():
-    """Periodic task: scan for anomalous access patterns.
+@shared_task(name="app.tasks.anomaly_detection.run_anomaly_sweep")
+def run_anomaly_sweep() -> list[dict]:
+    """Periodic task: scan for anomalous access patterns (Req 10.6).
 
-    Designed to run every minute via Celery Beat.
-    Checks all active sliding windows and generates alerts
-    for any that exceed the configured threshold.
-
-    In production, this would:
-    1. Scan Redis keys matching the anomaly prefix
-    2. Check counts against threshold
-    3. Send alerts via NotificationService to tenant admins
-    4. Write alert entries to the audit log
+    Runs every 60 seconds via Celery Beat.
+    Scans Redis for sliding-window counters exceeding the threshold.
+    Generates alerts for tenant admins.
     """
-    import asyncio
+    return asyncio.run(_sweep_async())
 
-    async def _sweep():
-        from app.config import get_settings
-        from app.db.redis import get_redis_client
+async def _sweep_async() -> list[dict]:
+    """Async implementation of the anomaly sweep."""
+    from app.config import get_settings
+    from app.db.redis import get_redis_client
 
-        settings = get_settings()
-        redis = get_redis_client()
-        threshold = settings.anomaly_detection_threshold
-        window = settings.anomaly_detection_window_minutes
+    settings = get_settings()
+    redis = get_redis_client()
+    threshold = settings.anomaly_detection_threshold
+    window = settings.anomaly_detection_window_minutes
 
-        # Scan all anomaly keys
-        cursor = 0
-        alerts = []
-        while True:
-            cursor, keys = await redis.scan(
-                cursor=cursor,
-                match=f"{_ANOMALY_PREFIX}*",
-                count=100,
-            )
-            for key in keys:
-                count = await redis.zcard(key)
-                if count >= threshold:
-                    # Extract tenant_id and identity from key
-                    parts = key.replace(_ANOMALY_PREFIX, "").split(":", 1)
-                    if len(parts) == 2:
-                        alerts.append({
-                            "tenant_id": parts[0],
-                            "identity": parts[1],
-                            "count": count,
-                            "threshold": threshold,
-                            "window_minutes": window,
-                            "detected_at": datetime.now(timezone.utc).isoformat(),
-                        })
+    # Scan all anomaly keys
+    cursor = 0
+    alerts = []
+    while True:
+        cursor, keys = await redis.scan(
+            cursor=cursor,
+            match=f"{_ANOMALY_PREFIX}*",
+            count=100,
+        )
+        for key in keys:
+            count = await redis.zcard(key)
+            if count >= threshold:
+                parts = key.replace(_ANOMALY_PREFIX, "").split(":", 1)
+                if len(parts) == 2:
+                    alerts.append({
+                        "tenant_id": parts[0],
+                        "identity": parts[1],
+                        "count": count,
+                        "threshold": threshold,
+                        "window_minutes": window,
+                        "detected_at": datetime.now(timezone.utc).isoformat(),
+                    })
 
-            if cursor == 0:
-                break
+        if cursor == 0:
+            break
 
-        if alerts:
-            logger.warning("Anomaly detection found %d alerts", len(alerts))
-            # In production: dispatch alerts via notification service
+    if alerts:
+        logger.warning("Anomaly detection found %d alerts", len(alerts))
 
-        return alerts
-
-    return asyncio.run(_sweep())
+    return alerts

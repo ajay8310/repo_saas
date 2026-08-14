@@ -1,0 +1,85 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.2.0, pluggy-1.6.0 -- C:\repo_as_service\repo_saas\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default' -> database=DirectoryBasedExampleDatabase(WindowsPath('c:/repo_as_service/repo_saas/.hypothesis/examples'))
+rootdir: c:\repo_as_service\repo_saas
+configfile: pyproject.toml
+plugins: anyio-4.3.0, hypothesis-6.100.2, asyncio-0.23.6, cov-5.0.0, mock-3.14.0
+asyncio: mode=Mode.AUTO
+collecting ... collected 38 items
+
+tests/integration/test_auth_flow.py::TestTokenEndpoint::test_missing_grant_type_returns_422 PASSED [  2%]
+tests/integration/test_auth_flow.py::TestTokenEndpoint::test_invalid_grant_type_returns_422 PASSED [  5%]
+tests/integration/test_auth_flow.py::TestTokenEndpoint::test_valid_shape_but_bad_credentials_returns_401 PASSED [  7%]
+tests/integration/test_auth_flow.py::TestTokenEndpoint::test_empty_client_id_returns_422 PASSED [ 10%]
+tests/integration/test_auth_flow.py::TestOTPEndpoints::test_otp_request_always_returns_202 PASSED [ 13%]
+tests/integration/test_auth_flow.py::TestOTPEndpoints::test_otp_verify_with_invalid_code_returns_401 PASSED [ 15%]
+tests/integration/test_auth_flow.py::TestOTPEndpoints::test_otp_verify_short_code_returns_422 PASSED [ 18%]
+tests/integration/test_auth_flow.py::TestMFAEndpoints::test_mfa_challenge_returns_202 PASSED [ 21%]
+tests/integration/test_auth_flow.py::TestMFAEndpoints::test_mfa_verify_without_challenge_returns_401 PASSED [ 23%]
+tests/integration/test_document_flow.py::TestDocumentUploadValidation::test_upload_without_auth_returns_403 PASSED [ 26%]
+tests/integration/test_document_flow.py::TestDocumentUploadValidation::test_upload_with_invalid_base64_returns_422 PASSED [ 28%]
+tests/integration/test_document_flow.py::TestDocumentRevocationValidation::test_revoke_without_auth_returns_403 PASSED [ 31%]
+tests/integration/test_document_flow.py::TestDocumentRevocationValidation::test_revoke_with_empty_reason_returns_422 PASSED [ 34%]
+tests/integration/test_document_flow.py::TestBulkRevokeValidation::test_bulk_revoke_without_auth_returns_403 PASSED [ 36%]
+tests/integration/test_document_flow.py::TestDocumentListValidation::test_list_without_auth_returns_403 PASSED [ 39%]
+tests/integration/test_document_flow.py::TestBulkUploadValidation::test_bulk_upload_without_auth_returns_403 PASSED [ 42%]
+tests/integration/test_schema_flow.py::TestSchemaEndpoints::test_create_schema_without_auth_returns_403 PASSED [ 44%]
+tests/integration/test_schema_flow.py::TestSchemaEndpoints::test_list_schemas_without_auth_returns_403 PASSED [ 47%]
+tests/integration/test_schema_flow.py::TestSchemaEndpoints::test_get_schema_without_auth_returns_403 PASSED [ 50%]
+tests/integration/test_schema_flow.py::TestSearchEndpoint::test_search_without_auth_returns_403 PASSED [ 52%]
+tests/integration/test_schema_flow.py::TestAuditEndpoints::test_list_audit_logs_without_auth_returns_403 PASSED [ 55%]
+tests/integration/test_schema_flow.py::TestAuditEndpoints::test_export_audit_logs_without_auth_returns_403 PASSED [ 57%]
+tests/integration/test_schema_flow.py::TestWebhookEndpoints::test_register_webhook_without_auth_returns_403 PASSED [ 60%]
+tests/integration/test_schema_flow.py::TestWebhookEndpoints::test_list_webhooks_without_auth_returns_403 PASSED [ 63%]
+tests/integration/test_schema_flow.py::TestNotificationEndpoints::test_get_preferences_without_auth_returns_403 PASSED [ 65%]
+tests/integration/test_schema_flow.py::TestNotificationEndpoints::test_update_preferences_without_auth_returns_403 PASSED [ 68%]
+tests/integration/test_tenant_flow.py::TestTenantCreation::test_create_without_auth_returns_403 PASSED [ 71%]
+tests/integration/test_tenant_flow.py::TestTenantCreation::test_invalid_namespace_returns_422 PASSED [ 73%]
+tests/integration/test_tenant_flow.py::TestTenantLifecycle::test_approve_without_auth_returns_403 PASSED [ 76%]
+tests/integration/test_tenant_flow.py::TestTenantLifecycle::test_suspend_without_auth_returns_403 PASSED [ 78%]
+tests/integration/test_tenant_flow.py::TestTenantLifecycle::test_deactivate_without_auth_returns_403 PASSED [ 81%]
+tests/integration/test_tenant_flow.py::TestTenantConfig::test_update_without_auth_returns_403 PASSED [ 84%]
+tests/integration/test_tenant_flow.py::TestKeyRotation::test_rotate_without_auth_returns_403 PASSED [ 86%]
+tests/integration/test_verification_flow.py::TestPublicVerification::test_verify_nonexistent_credential_returns_invalid PASSED [ 89%]
+tests/integration/test_verification_flow.py::TestPublicVerification::test_verify_bad_uuid_returns_422 PASSED [ 92%]
+tests/integration/test_verification_flow.py::TestTokenConsumption::test_consume_nonexistent_token_returns_invalid PASSED [ 94%]
+tests/integration/test_verification_flow.py::TestTokenConsumption::test_invalid_token_never_leaks_data PASSED [ 97%]
+tests/integration/test_verification_flow.py::TestTokenGeneration::test_generate_without_auth_returns_403 PASSED [100%]
+
+============================= 38 passed in 49.26s =============================
+
+=== STDERR ===
+Windows fatal exception: access violation
+
+Thread 0x00003728 (most recent call first):
+  File "C:\repo_as_service\repo_saas\.venv\Lib\site-packages\httpx\_utils.py", line 53 in normalize_header_key
+  File "C:\repo_as_service\repo_saas\.venv\Lib\site-packages\httpx\_models.py", line 0 in __init__
+  File Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+Windows fatal exception: access violation
+
+
+=== EXIT CODE: 0 ===

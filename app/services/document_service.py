@@ -4,6 +4,8 @@ Document service — upload, retrieval, download, revocation, bulk revoke.
 Queries use single-table filters with tenant_id + document ID.
 No joins — RLS and direct column filters handle scoping.
 
+Wires: malware scan → encryption → S3 → audit → notification → webhook → DigiLocker.
+
 Requirements: 3.1, 3.3, 3.4, 3.5, 3.7, 3.11, 4.1-4.9, 6.1-6.7
 """
 
@@ -26,11 +28,17 @@ from app.db.session import get_db
 from app.middleware.tenant_context import set_tenant_context
 from app.models.document import BulkJob, Document
 from app.models.schema import DocumentSchema
+from app.services.audit_service import AuditService
 from app.services.encryption_service import (
     EncryptedPayload,
     EncryptionService,
     EncryptionUnavailableError,
     get_encryption_service,
+)
+from app.services.malware_scanner import (
+    MalwareScanner,
+    ScanUnavailableError,
+    get_malware_scanner,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +70,7 @@ class DocumentService:
     """Handles document upload, retrieval, revocation.
 
     All queries filter by tenant_id directly — no joins.
+    Wires: malware scan → encryption → S3 → DB → audit → notification → webhook → DigiLocker.
     """
 
     def __init__(self, db: AsyncSession, settings: Settings) -> None:
@@ -69,6 +78,14 @@ class DocumentService:
         self.settings = settings
         self._s3 = self._create_s3_client()
         self._encryption = get_encryption_service()
+        self._audit = AuditService(db)
+        self._scanner: MalwareScanner | None = None
+
+    @property
+    def scanner(self) -> MalwareScanner:
+        if self._scanner is None:
+            self._scanner = get_malware_scanner()
+        return self._scanner
 
     def _create_s3_client(self):
         kwargs: dict = {"region_name": self.settings.aws_region}
@@ -90,11 +107,12 @@ class DocumentService:
         beneficiary_id: str,
         content: bytes,
         cmk_arn: str,
+        actor_id: str = "system",
+        actor_role: str = "issuer",
     ) -> UploadResult:
-        """Upload a single document with encryption.
+        """Upload a single document with full pipeline.
 
-        Validates schema existence and active status.
-        Encrypts content and stores to S3.
+        Flow: validate → malware scan → encrypt → S3 → DB insert → audit → events.
         No joins — schema lookup is a single query by ID with RLS.
         """
         if not beneficiary_id or not beneficiary_id.strip():
@@ -102,7 +120,7 @@ class DocumentService:
 
         await set_tenant_context(self.db, str(tenant_id))
 
-        # Validate schema exists and is active (single table query)
+        # 1. Validate schema exists and is active (single table query)
         schema_result = await self.db.execute(
             select(DocumentSchema).where(
                 DocumentSchema.id == schema_id,
@@ -115,13 +133,25 @@ class DocumentService:
                 "Schema not found or deactivated. Cannot upload documents."
             )
 
-        # Encrypt content
+        # 2. Malware scan — never bypass (Req 13.5)
+        try:
+            scan_result = self.scanner.scan(content)
+            if not scan_result.clean:
+                raise DocumentValidationError(
+                    f"File rejected: malware detected ({scan_result.reason})"
+                )
+        except ScanUnavailableError:
+            raise ServiceUnavailableError(
+                "Malware scan service unavailable. Upload rejected."
+            )
+
+        # 3. Encrypt content (Req 3.6)
         try:
             encrypted = self._encryption.encrypt(content, cmk_arn)
         except EncryptionUnavailableError:
             raise ServiceUnavailableError("Encryption service unavailable")
 
-        # Store ciphertext in S3
+        # 4. Store ciphertext in S3
         credential_id = str(uuid_mod.uuid4())
         s3_key = f"{tenant_id}/{credential_id}"
 
@@ -136,7 +166,7 @@ class DocumentService:
             logger.error("S3 upload failed: %s", exc)
             raise ServiceUnavailableError("Storage service unavailable") from exc
 
-        # Insert document metadata (RLS ensures tenant isolation)
+        # 5. Insert document metadata (RLS ensures tenant isolation)
         doc = Document(
             id=UUID(credential_id),
             tenant_id=tenant_id,
@@ -149,31 +179,99 @@ class DocumentService:
             iv=encrypted.iv,
         )
         self.db.add(doc)
+
+        # 6. Audit log — same transaction (Req 3.5, 10.7)
+        await self._audit.record(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            operation="document:upload",
+            resource_type="document",
+            resource_id=credential_id,
+            outcome="success",
+            metadata={"schema_id": str(schema_id), "beneficiary_id": beneficiary_id},
+        )
+
         await self.db.commit()
 
+        # 7. Fire-and-forget async events (notifications, webhooks, DigiLocker)
+        await self._dispatch_upload_events(tenant_id, credential_id, beneficiary_id)
+
         return UploadResult(credential_id=credential_id, status="stored")
+
+    async def _dispatch_upload_events(
+        self, tenant_id: UUID, credential_id: str, beneficiary_id: str
+    ) -> None:
+        """Dispatch post-upload events (best effort, non-blocking)."""
+        try:
+            from app.services.notification_service import NotificationService
+            from app.services.webhook_service import WebhookService
+            from app.services.digilocker_connector import DigiLockerConnector
+
+            # Notification to beneficiary
+            notifier = NotificationService(db=self.db, settings=self.settings)
+            await notifier.notify(
+                tenant_id=tenant_id,
+                beneficiary_id=beneficiary_id,
+                event_type="issuance",
+                payload={"credential_id": credential_id, "message": "A new document has been issued to you."},
+            )
+
+            # Webhook dispatch
+            webhook_svc = WebhookService(db=self.db)
+            await webhook_svc.dispatch_event(
+                tenant_id=tenant_id,
+                event_type="document.uploaded",
+                payload={"credential_id": credential_id, "beneficiary_id": beneficiary_id},
+                webhook_secret="",  # Secret comes from the webhook registration
+            )
+
+            # DigiLocker push (enqueue for async processing)
+            dl_connector = DigiLockerConnector(db=self.db, settings=self.settings)
+            await dl_connector.enqueue_push(
+                tenant_id=tenant_id,
+                document_id=UUID(credential_id),
+            )
+        except Exception as exc:
+            # Events are best-effort; don't fail the upload
+            logger.warning("Post-upload event dispatch error (non-fatal): %s", exc)
 
     # ------------------------------------------------------------------
     # Retrieval (Req 4.1, 4.2, 4.3)
     # ------------------------------------------------------------------
 
     async def get_document(
-        self, tenant_id: UUID, credential_id: UUID
+        self, tenant_id: UUID, credential_id: UUID,
+        actor_id: str = "system", actor_role: str = "issuer",
     ) -> Document | None:
-        """Get document metadata by ID. No joins."""
+        """Get document metadata by ID. No joins. Logs access attempt."""
         await set_tenant_context(self.db, str(tenant_id))
         result = await self.db.execute(
             select(Document).where(Document.id == credential_id)
         )
-        return result.scalar_one_or_none()
+        doc = result.scalar_one_or_none()
+
+        # Audit every retrieval attempt (Req 4.9, 10.1)
+        await self._audit.record(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            operation="document:read",
+            resource_type="document",
+            resource_id=str(credential_id),
+            outcome="success" if doc else "not_found",
+        )
+        await self.db.commit()
+        return doc
 
     async def get_document_for_beneficiary(
-        self, tenant_id: UUID, credential_id: UUID, beneficiary_id: str
+        self, tenant_id: UUID, credential_id: UUID, beneficiary_id: str,
+        actor_id: str = "system", actor_role: str = "beneficiary",
     ) -> Document | None:
         """Get document only if beneficiary matches (Req 4.2, 4.3).
 
         Returns None for mismatch — caller returns 403 indistinguishable
-        from not-found.
+        from not-found. Logs access attempt.
         """
         await set_tenant_context(self.db, str(tenant_id))
         result = await self.db.execute(
@@ -182,7 +280,19 @@ class DocumentService:
                 Document.beneficiary_id == beneficiary_id,
             )
         )
-        return result.scalar_one_or_none()
+        doc = result.scalar_one_or_none()
+
+        await self._audit.record(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            operation="document:read",
+            resource_type="document",
+            resource_id=str(credential_id),
+            outcome="success" if doc else "denied",
+        )
+        await self.db.commit()
+        return doc
 
     async def list_documents_for_beneficiary(
         self,
@@ -220,9 +330,10 @@ class DocumentService:
     # ------------------------------------------------------------------
 
     async def download_document(
-        self, tenant_id: UUID, credential_id: UUID
+        self, tenant_id: UUID, credential_id: UUID,
+        actor_id: str = "system", actor_role: str = "beneficiary",
     ) -> bytes:
-        """Download and decrypt document content. No joins."""
+        """Download and decrypt document content. Logs audit. No joins."""
         await set_tenant_context(self.db, str(tenant_id))
         result = await self.db.execute(
             select(Document).where(Document.id == credential_id)
@@ -230,6 +341,18 @@ class DocumentService:
         doc = result.scalar_one_or_none()
         if doc is None:
             raise DocumentNotFoundError(credential_id)
+
+        # Audit the download (Req 4.9)
+        await self._audit.record(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            operation="document:download",
+            resource_type="document",
+            resource_id=str(credential_id),
+            outcome="success",
+        )
+        await self.db.commit()
 
         # Fetch ciphertext from S3
         try:
@@ -259,8 +382,10 @@ class DocumentService:
         tenant_id: UUID,
         credential_id: UUID,
         reason: str,
+        actor_id: str = "system",
+        actor_role: str = "issuer",
     ) -> Document:
-        """Revoke a document (Req 6.1, 6.2). No joins."""
+        """Revoke a document (Req 6.1, 6.2). Logs audit + notifies beneficiary."""
         if not reason or len(reason) > 500:
             raise DocumentValidationError("revocation_reason must be 1-500 characters")
 
@@ -278,8 +403,46 @@ class DocumentService:
         doc.status = "revoked"
         doc.revoked_at = datetime.now(timezone.utc)
         doc.revocation_reason = reason
+
+        # Audit log — same transaction (Req 10.7)
+        await self._audit.record(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            operation="document:revoke",
+            resource_type="document",
+            resource_id=str(credential_id),
+            outcome="success",
+            metadata={"reason": reason},
+        )
+
         await self.db.commit()
         await self.db.refresh(doc)
+
+        # Post-revocation events (best-effort)
+        try:
+            from app.services.notification_service import NotificationService
+            from app.services.webhook_service import WebhookService
+
+            notifier = NotificationService(db=self.db, settings=self.settings)
+            await notifier.notify(
+                tenant_id=tenant_id,
+                beneficiary_id=doc.beneficiary_id,
+                event_type="revocation",
+                payload={"credential_id": str(credential_id), "reason": reason,
+                         "message": "One of your documents has been revoked."},
+            )
+
+            webhook_svc = WebhookService(db=self.db)
+            await webhook_svc.dispatch_event(
+                tenant_id=tenant_id,
+                event_type="document.revoked",
+                payload={"credential_id": str(credential_id), "reason": reason},
+                webhook_secret="",
+            )
+        except Exception as exc:
+            logger.warning("Post-revocation event dispatch error (non-fatal): %s", exc)
+
         return doc
 
     async def bulk_revoke(
