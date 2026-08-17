@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Database, Plus, Edit, Trash2, Download, ChevronRight } from 'lucide-react'
+import { Database, Plus, Edit, Trash2, Download } from 'lucide-react'
 
 interface Schema {
   id: string

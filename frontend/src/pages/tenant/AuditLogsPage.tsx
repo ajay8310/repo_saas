@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ScrollText, Download, Filter } from 'lucide-react'
+import { Download, Filter } from 'lucide-react'
 
 interface AuditEntry {
   id: string

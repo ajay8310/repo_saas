@@ -1,0 +1,32 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.2.0, pluggy-1.6.0
+rootdir: C:\repo_as_service\repo_saas
+configfile: pyproject.toml
+plugins: anyio-4.3.0, hypothesis-6.100.2, asyncio-0.23.6, cov-5.0.0, mock-3.14.0
+asyncio: mode=Mode.AUTO
+collected 88 items
+
+tests\unit\test_auth.py ..........                                       [ 11%]
+tests\unit\test_config.py ...............................                [ 46%]
+tests\unit\test_document_renderer.py ....................                [ 69%]
+tests\unit\test_main.py ............                                     [ 82%]
+tests\unit\test_schema_breaking_changes.py ...............               [100%]
+
+============================== warnings summary ===============================
+tests/unit/test_auth.py::TestJWTIssuance::test_issued_jwt_contains_required_claims
+tests/unit/test_auth.py::TestJWTIssuance::test_jwt_expiry_matches_settings
+tests/unit/test_auth.py::TestJWTIssuance::test_jwt_expiry_never_exceeds_3600_seconds
+tests/unit/test_auth.py::TestJWTIssuance::test_jwt_custom_expiry_is_respected
+tests/unit/test_auth.py::TestJWTIssuance::test_jwt_verifiable_with_public_key
+tests/unit/test_auth.py::TestJWTIssuance::test_expired_jwt_raises_on_decode
+tests/unit/test_auth.py::TestJWTIssuance::test_jwt_multiple_roles_preserved
+  C:\repo_as_service\repo_saas\.venv\Lib\site-packages\jose\jwt.py:311: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = timegm(datetime.utcnow().utctimetuple())
+
+tests/unit/test_document_renderer.py::TestPdfRendering::test_output_is_a_valid_pdf
+  C:\repo_as_service\repo_saas\.venv\Lib\site-packages\reportlab\lib\rl_safe_eval.py:11: DeprecationWarning: ast.NameConstant is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    haveNameConstant = hasattr(ast,'NameConstant')
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 88 passed, 8 warnings in 4.37s ========================
+EXIT=0

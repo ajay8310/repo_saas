@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, Building2, FileText, Database,
-  Shield, Webhook, ScrollText, LogOut, FolderOpen, User
+  Webhook, ScrollText, LogOut, FolderOpen, User
 } from 'lucide-react'
 
 export default function Layout() {

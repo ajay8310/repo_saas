@@ -11,6 +11,7 @@ Requirements: 3.1, 3.3, 3.4, 3.5, 3.7, 3.11, 4.1-4.9, 6.1-6.7
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid as uuid_mod
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from app.db.session import get_db
 from app.middleware.tenant_context import set_tenant_context
 from app.models.document import BulkJob, Document
 from app.models.schema import DocumentSchema
+from app.models.tenant import Tenant
 from app.services.audit_service import AuditService
 from app.services.encryption_service import (
     EncryptedPayload,
@@ -43,6 +45,9 @@ from app.services.malware_scanner import (
 
 logger = logging.getLogger(__name__)
 
+# Accepted values for the download `format` parameter (Req 4.7).
+_DOWNLOAD_FORMATS = {"raw", "pdf", "jsonld"}
+
 
 @dataclass(frozen=True, slots=True)
 class UploadResult:
@@ -50,6 +55,15 @@ class UploadResult:
 
     credential_id: str
     status: str
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedDocument:
+    """A download payload plus the metadata needed to serve it."""
+
+    content: bytes
+    media_type: str
+    filename: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,10 +344,27 @@ class DocumentService:
     # ------------------------------------------------------------------
 
     async def download_document(
-        self, tenant_id: UUID, credential_id: UUID,
-        actor_id: str = "system", actor_role: str = "beneficiary",
-    ) -> bytes:
-        """Download and decrypt document content. Logs audit. No joins."""
+        self,
+        tenant_id: UUID,
+        credential_id: UUID,
+        output_format: str = "raw",
+        actor_id: str = "system",
+        actor_role: str = "beneficiary",
+    ) -> RenderedDocument:
+        """Download a document, optionally rendered as PDF or JSON-LD (Req 4.7).
+
+        ``output_format`` is one of ``raw`` | ``pdf`` | ``jsonld``. The rendered
+        formats embed the credential ID, a QR code pointing at the public
+        verification URL, and an RS256 proof over the credential payload.
+
+        Every attempt is audited (Req 4.9). Queries are single-table lookups by
+        primary key — no joins.
+        """
+        if output_format not in _DOWNLOAD_FORMATS:
+            raise DocumentValidationError(
+                f"format must be one of: {', '.join(sorted(_DOWNLOAD_FORMATS))}"
+            )
+
         await set_tenant_context(self.db, str(tenant_id))
         result = await self.db.execute(
             select(Document).where(Document.id == credential_id)
@@ -351,6 +382,7 @@ class DocumentService:
             resource_type="document",
             resource_id=str(credential_id),
             outcome="success",
+            metadata={"format": output_format},
         )
         await self.db.commit()
 
@@ -371,7 +403,74 @@ class DocumentService:
         except EncryptionUnavailableError:
             raise ServiceUnavailableError("Encryption service unavailable")
 
-        return decrypted.plaintext
+        plaintext = decrypted.plaintext
+
+        if output_format == "raw":
+            return RenderedDocument(
+                content=plaintext,
+                media_type="application/octet-stream",
+                filename=f"{credential_id}.bin",
+            )
+
+        ctx = await self._build_render_context(doc, plaintext)
+
+        from app.services.document_renderer import render_json_ld, render_pdf
+
+        if output_format == "pdf":
+            return RenderedDocument(
+                content=render_pdf(ctx),
+                media_type="application/pdf",
+                filename=f"{credential_id}.pdf",
+            )
+
+        return RenderedDocument(
+            content=render_json_ld(ctx),
+            media_type="application/ld+json",
+            filename=f"{credential_id}.jsonld",
+        )
+
+    async def _build_render_context(self, doc: Document, plaintext: bytes):
+        """Assemble the data the renderers need.
+
+        Two single-table primary-key lookups (tenant name, schema name) rather
+        than a join. Field values come from the decrypted payload when it is a
+        JSON object; non-JSON content renders with an empty field table.
+        """
+        from app.services.document_renderer import RenderContext
+
+        tenant_result = await self.db.execute(
+            select(Tenant.name).where(Tenant.id == doc.tenant_id)
+        )
+        issuer_name = tenant_result.scalar_one_or_none() or "Unknown Issuer"
+
+        schema_result = await self.db.execute(
+            select(DocumentSchema.name).where(DocumentSchema.id == doc.schema_id)
+        )
+        schema_name = schema_result.scalar_one_or_none() or "Credential"
+
+        fields: dict[str, Any] = {}
+        try:
+            parsed = json.loads(plaintext.decode("utf-8"))
+            if isinstance(parsed, dict):
+                fields = parsed
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            logger.debug(
+                "Document %s payload is not JSON; rendering without field table",
+                doc.id,
+            )
+
+        return RenderContext(
+            credential_id=str(doc.id),
+            issuer_name=issuer_name,
+            schema_name=schema_name,
+            schema_version=doc.schema_version,
+            beneficiary_id=doc.beneficiary_id,
+            issued_at=doc.issued_at.isoformat() if doc.issued_at else "",
+            status=doc.status,
+            revoked_at=doc.revoked_at.isoformat() if doc.revoked_at else None,
+            revocation_reason=doc.revocation_reason,
+            fields=fields,
+        )
 
     # ------------------------------------------------------------------
     # Revocation (Req 6.1, 6.2, 6.4, 6.5)

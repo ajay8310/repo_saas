@@ -6,9 +6,10 @@ Requirements: 3.1-3.11, 4.1-4.9, 6.1-6.7
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from app.dependencies.auth import TokenPayload, get_current_user
@@ -151,19 +152,47 @@ async def get_document(
 @router.get("/{credential_id}/download")
 async def download_document(
     credential_id: UUID,
+    format: Literal["raw", "pdf", "jsonld"] = Query(
+        default="pdf",
+        description="Output format: signed PDF with QR (default), JSON-LD, or raw bytes.",
+    ),
     user: TokenPayload = Depends(get_current_user),
     service: DocumentService = Depends(get_document_service),
-) -> dict:
-    """Download decrypted document content (Req 4.7)."""
-    import base64
+) -> Response:
+    """Download a document as a signed PDF, JSON-LD, or raw bytes (Req 4.7).
+
+    PDF and JSON-LD embed the credential ID, a QR code pointing at the public
+    verification URL, and an RS256 proof over the credential payload.
+    """
     try:
-        content = await service.download_document(user.tenant_id, credential_id)
+        rendered = await service.download_document(
+            tenant_id=user.tenant_id,
+            credential_id=credential_id,
+            output_format=format,
+            actor_id=user.sub,
+            actor_role=user.roles[0] if user.roles else "beneficiary",
+        )
     except DocumentNotFoundError:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
+    except DocumentValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "VALIDATION_ERROR", "message": str(exc)},
+        )
     except ServiceUnavailableError as exc:
-        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": str(exc)})
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_UNAVAILABLE", "message": str(exc)},
+        )
 
-    return {"credential_id": str(credential_id), "content_base64": base64.b64encode(content).decode()}
+    return Response(
+        content=rendered.content,
+        media_type=rendered.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{rendered.filename}"',
+            "X-Credential-Id": str(credential_id),
+        },
+    )
 
 
 @router.post(

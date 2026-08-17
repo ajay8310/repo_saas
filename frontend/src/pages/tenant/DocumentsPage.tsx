@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Upload, Search, Filter, Ban, Download } from 'lucide-react'
+import { Upload, Search, Filter, Ban, Download } from 'lucide-react'
 
 interface Document {
   credential_id: string

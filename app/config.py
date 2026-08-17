@@ -307,6 +307,13 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum allowed verification token lifetime in hours (Requirement 5.1)",
     )
+    verification_base_url: str = Field(
+        default="http://localhost:3000",
+        description=(
+            "Public base URL used to build the verification link embedded in "
+            "generated QR codes (Requirement 4.7).  No trailing slash."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Webhook delivery

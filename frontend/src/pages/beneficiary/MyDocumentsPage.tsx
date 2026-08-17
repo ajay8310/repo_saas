@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Download, Share2, Shield, QrCode } from 'lucide-react'
+import { FileText, Download, Share2, QrCode } from 'lucide-react'
 
 interface MyDocument {
   credential_id: string

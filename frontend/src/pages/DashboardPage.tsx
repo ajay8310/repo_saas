@@ -1,8 +1,8 @@
 import { useAuth } from '@/context/AuthContext'
-import { FileText, Users, Database, Shield, Activity, Clock } from 'lucide-react'
+import { FileText, Database, Shield, Activity, Clock } from 'lucide-react'
 
 export default function DashboardPage() {
-  const { user, hasRole } = useAuth()
+  const { user } = useAuth()
 
   const stats = [
     { label: 'Documents', value: '2,451', icon: FileText, color: 'bg-blue-500' },

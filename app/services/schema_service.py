@@ -10,23 +10,103 @@ Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.db.session import get_db
 from app.middleware.tenant_context import set_tenant_context
+from app.models.document import Document
 from app.models.schema import DocumentSchema, SchemaVersion
 
 logger = logging.getLogger(__name__)
 
 # Valid field types per Requirement 2.6
 _VALID_FIELD_TYPES = {"string", "number", "date", "boolean", "enumeration", "file_reference"}
+
+# Cap on how many conflicting credential IDs we return in a 409 payload, so a
+# breaking change on a large schema can't produce an unbounded response.
+_MAX_CONFLICT_IDS = 1000
+
+
+# ---------------------------------------------------------------------------
+# Breaking-change detection (Req 2.3)
+# ---------------------------------------------------------------------------
+
+
+def detect_breaking_changes(
+    old_fields: list[dict[str, Any]],
+    new_fields: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Compare two field-definition sets and return breaking changes.
+
+    A change is *breaking* when a document that validated against
+    ``old_fields`` would no longer validate against ``new_fields``:
+
+    - ``field_removed``          — a field present before is now gone.
+      A rename surfaces as a removal plus an addition, which is correct.
+    - ``type_changed``           — stored values are the wrong type.
+    - ``required_field_added``   — existing documents have no value for it.
+    - ``optional_became_required`` — documents that omitted it are now invalid.
+    - ``enum_values_removed``    — previously legal values are now illegal.
+
+    Purely additive or relaxing changes are NOT breaking: adding an optional
+    field, widening an enumeration, or making a required field optional.
+
+    This is a structural diff — it needs no access to document content, which
+    matters because document payloads are encrypted at rest.
+    """
+    old_by_name = {f["name"]: f for f in old_fields if f.get("name")}
+    new_by_name = {f["name"]: f for f in new_fields if f.get("name")}
+
+    breaking: list[dict[str, Any]] = []
+
+    # Fields that disappeared (includes the "old half" of a rename).
+    for name in old_by_name:
+        if name not in new_by_name:
+            breaking.append({"field": name, "change": "field_removed"})
+
+    for name, new_field in new_by_name.items():
+        old_field = old_by_name.get(name)
+
+        # Brand-new field that is mandatory — existing documents lack it.
+        if old_field is None:
+            if new_field.get("required") is True:
+                breaking.append({"field": name, "change": "required_field_added"})
+            continue
+
+        # Type change invalidates every stored value for this field.
+        if new_field.get("type") != old_field.get("type"):
+            breaking.append({
+                "field": name,
+                "change": "type_changed",
+                "from": old_field.get("type"),
+                "to": new_field.get("type"),
+            })
+
+        # Tightening optional -> required.
+        if new_field.get("required") is True and old_field.get("required") is not True:
+            breaking.append({"field": name, "change": "optional_became_required"})
+
+        # Narrowing an enumeration removes previously-valid values.
+        if (
+            old_field.get("type") == "enumeration"
+            and new_field.get("type") == "enumeration"
+        ):
+            removed = set(old_field.get("allowed_values") or []) - set(
+                new_field.get("allowed_values") or []
+            )
+            if removed:
+                breaking.append({
+                    "field": name,
+                    "change": "enum_values_removed",
+                    "removed_values": sorted(removed),
+                })
+
+    return breaking
 
 
 class SchemaService:
@@ -94,9 +174,9 @@ class SchemaService:
     ) -> DocumentSchema:
         """Update schema with new field definitions (Req 2.3, 2.4).
 
-        Increments version and archives the previous definition.
-        Does NOT check for breaking changes against existing documents here —
-        that validation should be done by the caller if needed.
+        Rejects breaking changes that would invalidate already-issued documents,
+        reporting the conflicting credential IDs. Otherwise increments the
+        version monotonically and archives a snapshot of the new definition.
         """
         self._validate_field_definitions(field_definitions)
         await set_tenant_context(self.db, str(tenant_id))
@@ -110,6 +190,29 @@ class SchemaService:
 
         if schema.status != "active":
             raise SchemaInactiveError(schema_id)
+
+        # Breaking-change gate (Req 2.3). A structurally breaking change only
+        # actually invalidates anything if documents exist at the current
+        # version — on an unused schema the change is safe to apply.
+        breaking = detect_breaking_changes(
+            schema.field_definitions or [], field_definitions
+        )
+        if breaking:
+            conflicting = await self._get_conflicting_credential_ids(
+                schema_id, schema.version
+            )
+            if conflicting:
+                logger.warning(
+                    "Rejected breaking schema update: schema_id=%s changes=%d conflicts=%d",
+                    schema_id,
+                    len(breaking),
+                    len(conflicting),
+                )
+                raise SchemaBreakingChangeError(
+                    schema_id=schema_id,
+                    breaking_changes=breaking,
+                    conflicting_credential_ids=conflicting,
+                )
 
         # Increment version
         new_version = schema.version + 1
@@ -127,6 +230,26 @@ class SchemaService:
         await self.db.commit()
         await self.db.refresh(schema)
         return schema
+
+    async def _get_conflicting_credential_ids(
+        self, schema_id: UUID, schema_version: int
+    ) -> list[str]:
+        """Return credential IDs issued under the given schema version.
+
+        Single-table query on ``documents`` — no joins. Every document at this
+        version conforms to the outgoing definition, so a structurally breaking
+        change invalidates all of them.
+        """
+        result = await self.db.execute(
+            select(Document.id)
+            .where(
+                Document.schema_id == schema_id,
+                Document.schema_version == schema_version,
+            )
+            .order_by(Document.created_at.desc())
+            .limit(_MAX_CONFLICT_IDS)
+        )
+        return [str(row) for row in result.scalars().all()]
 
     async def deactivate_schema(self, tenant_id: UUID, schema_id: UUID) -> DocumentSchema:
         """Deactivate a schema — prevent new documents (Req 2.5)."""
@@ -217,6 +340,28 @@ class SchemaValidationError(Exception):
     def __init__(self, errors: list[dict]) -> None:
         self.errors = errors
         super().__init__(f"Schema validation failed: {len(errors)} error(s)")
+
+
+class SchemaBreakingChangeError(Exception):
+    """Raised when a schema update would invalidate already-issued documents.
+
+    Carries the structural diff and the conflicting credential IDs so the API
+    layer can return them in a 409 SCHEMA_BREAKING_CHANGE response (Req 2.3).
+    """
+
+    def __init__(
+        self,
+        schema_id: UUID,
+        breaking_changes: list[dict],
+        conflicting_credential_ids: list[str],
+    ) -> None:
+        self.schema_id = schema_id
+        self.breaking_changes = breaking_changes
+        self.conflicting_credential_ids = conflicting_credential_ids
+        super().__init__(
+            f"Schema update rejected: {len(breaking_changes)} breaking change(s) "
+            f"would invalidate {len(conflicting_credential_ids)} document(s)"
+        )
 
 
 # ---------------------------------------------------------------------------

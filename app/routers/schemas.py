@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.dependencies.auth import TokenPayload, get_current_user
 from app.rbac.permissions import require_permission
 from app.services.schema_service import (
+    SchemaBreakingChangeError,
     SchemaInactiveError,
     SchemaNotFoundError,
     SchemaService,
@@ -138,6 +139,17 @@ async def update_schema(
     except SchemaInactiveError as exc:
         raise HTTPException(
             status_code=409, detail={"code": "SCHEMA_DEACTIVATED"}
+        ) from exc
+    except SchemaBreakingChangeError as exc:
+        # Req 2.3 — reject and report the conflicting document IDs.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SCHEMA_BREAKING_CHANGE",
+                "message": str(exc),
+                "breaking_changes": exc.breaking_changes,
+                "conflicting_credential_ids": exc.conflicting_credential_ids,
+            },
         ) from exc
     except SchemaValidationError as exc:
         raise HTTPException(
