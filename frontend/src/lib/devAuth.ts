@@ -46,3 +46,12 @@ export const DEMO_ROLES: DemoRole[] = [
   'issuer',
   'beneficiary',
 ]
+
+/** Human-readable labels for the demo role picker. */
+export const DEMO_ROLE_LABELS: Record<DemoRole, string> = {
+  super_admin: 'Super Admin',
+  tenant_admin: 'Tenant Admin',
+  issuer: 'Issuer',
+  beneficiary: 'Beneficiary',
+  verifier: 'Verifier',
+}
