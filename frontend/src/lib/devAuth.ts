@@ -45,6 +45,7 @@ export const DEMO_ROLES: DemoRole[] = [
   'tenant_admin',
   'issuer',
   'beneficiary',
+  'verifier',
 ]
 
 /** Human-readable labels for the demo role picker. */

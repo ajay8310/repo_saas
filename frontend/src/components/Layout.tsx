@@ -3,21 +3,29 @@ import { useAuth } from '@/context/AuthContext'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, Building2, FileText, Database,
-  Webhook, ScrollText, LogOut, FolderOpen, User
+  Webhook, ScrollText, LogOut, FolderOpen, User, ShieldCheck
 } from 'lucide-react'
 
 export default function Layout() {
   const { user, logout, hasRole } = useAuth()
   const location = useLocation()
 
+  const isIssuing =
+    hasRole('super_admin') || hasRole('tenant_admin') || hasRole('issuer')
+  const isAdmin = hasRole('super_admin') || hasRole('tenant_admin')
+
+  // Keep these conditions aligned with the route guards in App.tsx.
   const navItems = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
     { to: '/tenants', label: 'Tenants', icon: Building2, show: hasRole('super_admin') },
-    { to: '/schemas', label: 'Schemas', icon: Database, show: hasRole('super_admin') || hasRole('tenant_admin') || hasRole('issuer') },
-    { to: '/documents', label: 'Documents', icon: FileText, show: hasRole('super_admin') || hasRole('tenant_admin') || hasRole('issuer') },
+    { to: '/schemas', label: 'Schemas', icon: Database, show: isIssuing },
+    { to: '/documents', label: 'Documents', icon: FileText, show: isIssuing },
     { to: '/my-documents', label: 'My Documents', icon: FolderOpen, show: hasRole('beneficiary') },
-    { to: '/audit-logs', label: 'Audit Logs', icon: ScrollText, show: hasRole('super_admin') || hasRole('tenant_admin') },
-    { to: '/webhooks', label: 'Webhooks', icon: Webhook, show: hasRole('super_admin') || hasRole('tenant_admin') },
+    { to: '/audit-logs', label: 'Audit Logs', icon: ScrollText, show: isAdmin },
+    { to: '/webhooks', label: 'Webhooks', icon: Webhook, show: isAdmin },
+    // Public page, but surfaced in-app so verifiers have a destination and
+    // other roles can reach it without hand-editing the URL.
+    { to: '/verify', label: 'Verify Document', icon: ShieldCheck, show: true },
   ]
 
   return (

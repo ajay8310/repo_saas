@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { FileText, Download, Share2, QrCode, Copy, Clock } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
 import { downloadAsJson } from '@/lib/download'
+import { issueToken } from '@/lib/verificationStore'
 
 interface MyDocument {
   credential_id: string
@@ -45,15 +46,8 @@ const EXPIRY_OPTIONS = [
   { hours: 168, label: '7 days (max)' },
 ]
 
-/** URL-safe random token, mirroring the backend's 32-byte token. */
-function generateToken(): string {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-}
+// Token generation lives in lib/verificationStore so the public Verify page
+// can actually resolve what we mint here.
 
 export default function MyDocumentsPage() {
   const [docs] = useState<MyDocument[]>(INITIAL_DOCS)
@@ -98,12 +92,11 @@ export default function MyDocumentsPage() {
       notify('Revoked documents cannot be shared.', 'error')
       return
     }
-    const token = generateToken()
-    const expiresAt = new Date(Date.now() + expiry * 3600 * 1000)
+    const record = issueToken(doc.credential_id, consented, expiry)
     setResult({
-      token,
-      expires_at: expiresAt.toISOString(),
-      consented_fields: [...consented],
+      token: record.token,
+      expires_at: record.expires_at,
+      consented_fields: record.consented_fields,
     })
     notify(
       consented.length
@@ -285,15 +278,17 @@ export default function MyDocumentsPage() {
                       </div>
 
                       <div>
-                        <span className="text-xs text-gray-500">Verification link</span>
+                        <span className="text-xs text-gray-500">
+                          Share this link (opens the token above)
+                        </span>
                         <div className="flex gap-2 mt-1">
                           <code className="flex-1 bg-white border border-green-200 rounded px-2 py-1.5 text-xs break-all">
-                            {window.location.origin}/verify/{doc.credential_id}
+                            {window.location.origin}/verify/{result.token}
                           </code>
                           <button
                             onClick={() =>
                               copy(
-                                `${window.location.origin}/verify/${doc.credential_id}`,
+                                `${window.location.origin}/verify/${result.token}`,
                                 'Link',
                               )
                             }
@@ -303,6 +298,15 @@ export default function MyDocumentsPage() {
                             <Copy size={14} />
                           </button>
                         </div>
+                      </div>
+
+                      <div>
+                        <span className="text-xs text-gray-500">
+                          Public link (validity only, reusable)
+                        </span>
+                        <code className="block mt-1 bg-white border border-green-200 rounded px-2 py-1.5 text-xs break-all text-gray-600">
+                          {window.location.origin}/verify/{doc.credential_id}
+                        </code>
                       </div>
 
                       <p className="text-xs text-green-800 pt-1">
