@@ -149,8 +149,18 @@ class NotificationService:
         notify_on_revocation: bool | None = None,
         notify_on_verification: bool | None = None,
         preferred_channel: str | None = None,
+        contact_email: str | None = None,
+        contact_phone: str | None = None,
     ) -> NotificationPreference:
-        """Update notification preferences. Creates if not exists. No joins."""
+        """Update notification preferences. Creates if not exists. No joins.
+
+        For the contact fields, ``None`` means "leave unchanged" while an empty
+        string means "clear it". Without that distinction a beneficiary could
+        set a contact address but never remove one.
+
+        Contact details matter: ``notify()`` skips delivery entirely when the
+        preferred channel has no corresponding contact value on file.
+        """
         await set_tenant_context(self.db, str(tenant_id))
         result = await self.db.execute(
             select(NotificationPreference).where(
@@ -174,10 +184,27 @@ class NotificationService:
             pref.notify_on_verification = notify_on_verification
         if preferred_channel is not None:
             pref.preferred_channel = preferred_channel
+        if contact_email is not None:
+            pref.contact_email = contact_email.strip() or None
+        if contact_phone is not None:
+            pref.contact_phone = contact_phone.strip() or None
 
         await self.db.commit()
         await self.db.refresh(pref)
         return pref
+
+    @staticmethod
+    def delivery_blocked_reason(pref: NotificationPreference) -> str | None:
+        """Explain why delivery would be skipped, or None if it can proceed.
+
+        Mirrors the dispatch conditions in ``notify()`` so callers and the API
+        can surface the problem instead of silently dropping notifications.
+        """
+        if pref.preferred_channel == "email" and not pref.contact_email:
+            return "No contact email on file — email notifications will be skipped."
+        if pref.preferred_channel == "sms" and not pref.contact_phone:
+            return "No contact phone on file — SMS notifications will be skipped."
+        return None
 
 
 # ---------------------------------------------------------------------------
