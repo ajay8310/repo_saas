@@ -11,6 +11,7 @@ import DocumentsPage from './pages/tenant/DocumentsPage'
 import AuditLogsPage from './pages/tenant/AuditLogsPage'
 import WebhooksPage from './pages/tenant/WebhooksPage'
 import MyDocumentsPage from './pages/beneficiary/MyDocumentsPage'
+import NotificationsPage from './pages/beneficiary/NotificationsPage'
 import VerifyPage from './pages/public/VerifyPage'
 
 /**
@@ -92,6 +93,14 @@ export default function App() {
           element={
             <ProtectedRoute requiredRoles={['beneficiary']}>
               <MyDocumentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="notifications"
+          element={
+            <ProtectedRoute requiredRoles={['beneficiary']}>
+              <NotificationsPage />
             </ProtectedRoute>
           }
         />

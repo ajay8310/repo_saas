@@ -1,0 +1,7 @@
+﻿asyncio: mode=Mode.AUTO
+collected 1 item
+
+tests\unit\test_main.py .                                                [100%]
+
+============================== 1 passed in 1.70s ==============================
+EXIT=0

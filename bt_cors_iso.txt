@@ -1,0 +1,20 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.2.0, pluggy-1.6.0
+rootdir: c:\repo_as_service\repo_saas
+configfile: pyproject.toml
+plugins: anyio-4.3.0, hypothesis-6.100.2, asyncio-0.23.6, cov-5.0.0, mock-3.14.0
+asyncio: mode=Mode.AUTO
+collected 1 item
+
+tests\unit\test_main.py F                                                [100%]
+
+================================== FAILURES ===================================
+___________ TestCORSMiddleware.test_preflight_returns_cors_headers ____________
+tests\unit\test_main.py:130: in test_preflight_returns_cors_headers
+    assert response.status_code in (200, 204)
+E   assert 400 in (200, 204)
+E    +  where 400 = <Response [400 Bad Request]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/unit/test_main.py::TestCORSMiddleware::test_preflight_returns_cors_headers
+============================== 1 failed in 2.06s ==============================
+EXIT=1
