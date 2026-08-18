@@ -39,18 +39,9 @@ export function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-/** Trigger a browser download of `data` as a JSON file. */
-export function downloadAsJson(filename: string, data: unknown): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: 'application/json',
-  })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
+// Download helpers live in lib/download.ts; re-exported here so existing
+// document-page imports keep working.
+export { downloadAsCsv, downloadAsJson } from './download'
 
 
 /** Max records per bulk upload — mirrors backend Req 3.8. */
