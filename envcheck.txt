@@ -1,0 +1,3 @@
+﻿DOCKER_CLI=missing
+DOCKER_DAEMON=not-running
+ENV_FILE=False
