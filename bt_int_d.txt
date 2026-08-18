@@ -1,6 +1,0 @@
-﻿Windows fatal exception: access violation
-
-tests\integration\test_verification_flow.py .....                        [100%]
-
-============================= 38 passed in 39.42s =============================
-EXIT=0
