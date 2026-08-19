@@ -119,15 +119,24 @@ class TestCORSMiddleware:
     """Tests that CORS headers are present on preflight requests."""
 
     def test_preflight_returns_cors_headers(self, client: TestClient) -> None:
+        # Derive the Origin from the configured allow-list.  Hardcoding an
+        # origin made this test depend on the developer's local .env: a
+        # deployment that restricts CORS to its own frontend would see
+        # Starlette reject the preflight with 400 ("Disallowed CORS origin")
+        # and fail a test that is only meant to prove CORS is wired up.
+        allowed = get_settings().cors_allowed_origins
+        origin = "https://example.com" if "*" in allowed else allowed[0]
+
         response = client.options(
             "/health",
             headers={
-                "Origin": "https://example.com",
+                "Origin": origin,
                 "Access-Control-Request-Method": "GET",
             },
         )
         # Either 200 or 204 is acceptable for an OPTIONS preflight
         assert response.status_code in (200, 204)
+        assert "access-control-allow-origin" in response.headers
 
 
 class TestAppMetadata:

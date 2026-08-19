@@ -25,6 +25,20 @@ from app.models.document import Document
 
 logger = logging.getLogger(__name__)
 
+# Columns a caller may sort by.  Everything else falls back to created_at.
+# Encryption material (encrypted_dek, iv) and storage locators (s3_key) are
+# deliberately excluded.
+_SORTABLE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "created_at",
+        "updated_at",
+        "beneficiary_id",
+        "status",
+        "schema_version",
+        "revoked_at",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SearchParams:
@@ -107,8 +121,13 @@ class SearchService:
             stmt = stmt.where(Document.created_at <= params.issued_before)
             count_stmt = count_stmt.where(Document.created_at <= params.issued_before)
 
-        # Apply sorting (Req 9.4)
-        sort_column = getattr(Document, params.sort_by, Document.created_at)
+        # Apply sorting (Req 9.4).  Only allow-listed columns are sortable:
+        # a bare getattr(Document, params.sort_by) accepted any attribute name,
+        # including encrypted_dek, iv and s3_key, letting a caller order by
+        # ciphertext material and infer its contents from the ordering.
+        sort_column = getattr(Document, params.sort_by, None)
+        if params.sort_by not in _SORTABLE_COLUMNS or sort_column is None:
+            sort_column = Document.created_at
         if params.sort_order == "asc":
             stmt = stmt.order_by(sort_column.asc())
         else:

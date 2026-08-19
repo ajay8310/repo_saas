@@ -14,12 +14,33 @@ from __future__ import annotations
 
 import json
 import logging
+from uuid import UUID
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_tenant_id(request: Request) -> str | None:
+    """Return the tenant id for *request*, or None when it cannot be determined.
+
+    Prefers a value already on ``request.state`` (set by a test harness or an
+    outer middleware) and otherwise decodes the bearer token.
+    """
+    existing: str | None = getattr(request.state, "tenant_id", None)
+    if existing:
+        return existing
+
+    from app.dependencies.auth import bearer_token_from_request, decode_access_token
+
+    token = bearer_token_from_request(request)
+    if token is None:
+        return None
+    payload = decode_access_token(token)
+    return str(payload.tenant_id) if payload is not None else None
+
 
 # Routes that don't require tenant context
 _PUBLIC_PREFIXES = (
@@ -55,13 +76,19 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(prefix) for prefix in _PUBLIC_PREFIXES):
             return await call_next(request)
 
-        # The tenant_id is set on request.state by the auth dependency
-        # after JWT validation. If not present, let the request proceed —
-        # the auth dependency will return 401 if needed.
-        tenant_id: str | None = getattr(request.state, "tenant_id", None)
+        # Resolve the tenant from the bearer token directly.  We cannot wait
+        # for get_current_user to populate request.state: endpoint dependencies
+        # resolve *after* all middleware has run, so reading request.state here
+        # would always miss and silently disable the checks below.
+        tenant_id = _resolve_tenant_id(request)
 
         if not tenant_id:
+            # Unauthenticated or unparseable token — let the auth dependency
+            # produce the 401.
             return await call_next(request)
+
+        # Publish for downstream middleware (rate limiting) and dependencies.
+        request.state.tenant_id = tenant_id
 
         # Check tenant status from Redis cache
         tenant_status = await self._get_tenant_status(tenant_id)
@@ -136,10 +163,20 @@ async def set_tenant_context(session, tenant_id: str) -> None:
 
     Call this at the start of any service method that needs tenant isolation:
         await set_tenant_context(db, str(current_user.tenant_id))
+
+    The tenant id is validated as a UUID and passed via ``set_config`` with a
+    bound parameter rather than interpolated into the statement.  Values reach
+    here from a validated JWT today, but string-building SQL is the wrong
+    default for a function whose entire purpose is enforcing isolation.
     """
     from sqlalchemy import text
 
-    await session.execute(text(f"SET LOCAL app.tenant_id = '{tenant_id}'"))
+    # Raises ValueError on anything that is not a UUID.
+    validated = str(UUID(str(tenant_id)))
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": validated},
+    )
 
 
 async def cache_tenant_status(

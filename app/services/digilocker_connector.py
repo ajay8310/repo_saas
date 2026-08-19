@@ -72,7 +72,12 @@ class DigiLockerConnector:
                     json={"document_id": str(push.document_id)},
                 )
                 if 200 <= response.status_code < 300:
-                    push.status = "delivered"
+                    # 'success' — not 'delivered'.  The digilocker_pushes
+                    # status CHECK constraint permits
+                    # pending|success|failed|permanently_failed|retrying, so
+                    # writing 'delivered' raised a CheckViolation on every
+                    # successful push.
+                    push.status = "success"
                     await self.db.commit()
                     return True
         except Exception as exc:

@@ -1,0 +1,16 @@
+C:\repo_as_service\repo_saas\tests\unit\test_main.py:130: assert 400 in (200, 204)
+============================== warnings summary ===============================
+tests/unit/test_auth.py: 7 warnings
+tests/property/test_auth_properties.py: 51 warnings
+  C:\repo_as_service\repo_saas\.venv\Lib\site-packages\jose\jwt.py:311: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = timegm(datetime.utcnow().utctimetuple())
+
+tests/unit/test_document_renderer.py::TestPdfRendering::test_output_is_a_valid_pdf
+  C:\repo_as_service\repo_saas\.venv\Lib\site-packages\reportlab\lib\rl_safe_eval.py:11: DeprecationWarning: ast.NameConstant is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    haveNameConstant = hasattr(ast,'NameConstant')
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/unit/test_main.py::TestCORSMiddleware::test_preflight_returns_cors_headers
+================= 1 failed, 140 passed, 59 warnings in 6.08s ==================
+EXIT=1
