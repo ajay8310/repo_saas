@@ -1,8 +1,0 @@
-OPENAPI=200 PATHS=45
-  /api/v1/digilocker/status = True
-  /api/v1/digilocker/pushes = True
-  /api/v1/digilocker/pushes/{push_id}/retry = True
-  /api/v1/documents/{credential_id}/digilocker = True
-UI http://127.0.0.1:3000/digilocker = 200
-UI http://127.0.0.1:3000/src/pages/tenant/DigiLockerPage.tsx = 200
-UI http://127.0.0.1:3000/src/lib/digilocker.ts = 200
