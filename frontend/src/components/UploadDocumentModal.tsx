@@ -1,11 +1,16 @@
 import { useState } from 'react'
-import { Upload } from 'lucide-react'
+import { Smartphone, Upload } from 'lucide-react'
 import Modal from './Modal'
 import { SCHEMA_OPTIONS } from '@/lib/documents'
+import { DOCTYPE_OPTIONS, suggestDoctype } from '@/lib/digilocker'
 
 interface Props {
   onClose: () => void
-  onSubmit: (schemaName: string, beneficiaryId: string) => void
+  onSubmit: (
+    schemaName: string,
+    beneficiaryId: string,
+    options: { publishToDigiLocker: boolean; doctype: string },
+  ) => void
 }
 
 /** Single-document issuance form (mirrors POST /api/v1/documents). */
@@ -14,6 +19,14 @@ export default function UploadDocumentModal({ onClose, onSubmit }: Props) {
   const [beneficiaryId, setBeneficiaryId] = useState('')
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
+  // On by default: publishing to the citizen's locker at issuance is the
+  // expected outcome, and an officer who forgets leaves the certificate
+  // stranded in the repository where the citizen will never look for it.
+  const [publishToDigiLocker, setPublishToDigiLocker] = useState(true)
+  const [doctype, setDoctype] = useState<string | null>(null)
+
+  // Follows the schema unless the officer has explicitly overridden it.
+  const effectiveDoctype = doctype ?? suggestDoctype(schemaName)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -36,7 +49,10 @@ export default function UploadDocumentModal({ onClose, onSubmit }: Props) {
         return
       }
     }
-    onSubmit(schemaName, id)
+    onSubmit(schemaName, id, {
+      publishToDigiLocker,
+      doctype: effectiveDoctype,
+    })
   }
 
   return (
@@ -99,6 +115,54 @@ export default function UploadDocumentModal({ onClose, onSubmit }: Props) {
             placeholder={'{\n  "student_name": "John Doe",\n  "grade": "A"\n}'}
             className="w-full px-3 py-2.5 border border-gray-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none"
           />
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={publishToDigiLocker}
+              onChange={e => setPublishToDigiLocker(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-2 focus:ring-brand-500"
+            />
+            <span>
+              <span className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+                <Smartphone size={15} className="text-brand-600" />
+                Publish to DigiLocker
+              </span>
+              <span className="mt-0.5 block text-sm text-gray-500">
+                Delivers the credential to the beneficiary&rsquo;s DigiLocker
+                account as soon as it is issued.
+              </span>
+            </span>
+          </label>
+
+          {publishToDigiLocker && (
+            <div className="mt-3 pl-7">
+              <label
+                htmlFor="doctype"
+                className="block text-sm font-medium text-gray-700 mb-1.5"
+              >
+                DigiLocker document type
+              </label>
+              <select
+                id="doctype"
+                value={effectiveDoctype}
+                onChange={e => setDoctype(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none"
+              >
+                {DOCTYPE_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>
+                    {o.value} — {o.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-gray-500">
+                Suggested from the schema. DigiLocker rejects unknown types, so
+                pick the closest match.
+              </p>
+            </div>
+          )}
         </div>
 
         {error && (

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Upload, Search, Ban, Download } from 'lucide-react'
+import { Upload, Search, Ban, Download, Smartphone, CheckCircle2 } from 'lucide-react'
 import UploadDocumentModal from '@/components/UploadDocumentModal'
 import BulkUploadModal from '@/components/BulkUploadModal'
 import { Toast, useToast } from '@/hooks/useToast'
@@ -8,25 +8,45 @@ import {
   type DocumentRow,
   downloadAsJson,
   generateCredentialId,
+  loadDocuments,
+  saveDocuments,
   todayIso,
 } from '@/lib/documents'
-
-const INITIAL_DOCS: DocumentRow[] = [
-  { credential_id: 'cred-001', schema_name: 'Degree Certificate', beneficiary_id: 'john.doe@email.com', status: 'stored', issued_at: '2025-06-01' },
-  { credential_id: 'cred-002', schema_name: 'Professional License', beneficiary_id: 'jane.smith@email.com', status: 'stored', issued_at: '2025-05-28' },
-  { credential_id: 'cred-003', schema_name: 'Degree Certificate', beneficiary_id: 'bob.wilson@email.com', status: 'revoked', issued_at: '2025-04-15' },
-  { credential_id: 'cred-004', schema_name: 'Land Title Deed', beneficiary_id: 'alice.brown@email.com', status: 'stored', issued_at: '2025-03-20' },
-  { credential_id: 'cred-005', schema_name: 'Professional License', beneficiary_id: 'charlie.davis@email.com', status: 'stored', issued_at: '2025-02-10' },
-]
+import {
+  type PushRecord,
+  loadPushes,
+  publish,
+  savePushes,
+  statusOf,
+  suggestDoctype,
+  upsert,
+} from '@/lib/digilocker'
 
 export default function DocumentsPage() {
-  const [docs, setDocs] = useState<DocumentRow[]>(INITIAL_DOCS)
+  const [docs, setDocs] = useState<DocumentRow[]>(() => loadDocuments())
+  const [pushes, setPushes] = useState<PushRecord[]>(() => loadPushes())
   const [searchQuery, setSearchQuery] = useState('')
   const [showUpload, setShowUpload] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
   const { toast, notify } = useToast()
 
-  const handleUpload = (schemaName: string, beneficiaryId: string) => {
+  // Both lists are shared with the DigiLocker page through localStorage, so a
+  // credential issued here is immediately publishable there.
+  const persistDocs = (next: DocumentRow[]) => {
+    setDocs(next)
+    saveDocuments(next)
+  }
+
+  const persistPushes = (next: PushRecord[]) => {
+    setPushes(next)
+    savePushes(next)
+  }
+
+  const handleUpload = (
+    schemaName: string,
+    beneficiaryId: string,
+    options: { publishToDigiLocker: boolean; doctype: string },
+  ) => {
     const row: DocumentRow = {
       credential_id: generateCredentialId(docs),
       schema_name: schemaName,
@@ -34,9 +54,44 @@ export default function DocumentsPage() {
       status: 'stored',
       issued_at: todayIso(),
     }
-    setDocs(prev => [row, ...prev])
+    persistDocs([row, ...docs])
     setShowUpload(false)
-    notify(`Issued ${row.credential_id} to ${beneficiaryId}`)
+
+    if (!options.publishToDigiLocker) {
+      notify(`Issued ${row.credential_id} to ${beneficiaryId}`)
+      return
+    }
+
+    const outcome = publish(pushes, {
+      credentialId: row.credential_id,
+      doctype: options.doctype,
+      documentStatus: 'stored',
+    })
+    if (outcome.ok && outcome.record) {
+      persistPushes(upsert(pushes, outcome.record))
+      notify(`Issued ${row.credential_id} and published to DigiLocker`)
+    } else {
+      // Issuance succeeded even though publication did not — say both, so the
+      // officer knows the credential exists and needs a retry.
+      notify(
+        `Issued ${row.credential_id}, but DigiLocker publication failed. Retry from the DigiLocker page.`,
+        'error',
+      )
+    }
+  }
+
+  const handlePublish = (doc: DocumentRow) => {
+    const outcome = publish(pushes, {
+      credentialId: doc.credential_id,
+      doctype: suggestDoctype(doc.schema_name),
+      documentStatus: doc.status,
+    })
+    if (!outcome.ok || !outcome.record) {
+      notify(outcome.error ?? 'Publication failed.', 'error')
+      return
+    }
+    persistPushes(upsert(pushes, outcome.record))
+    notify(`${doc.credential_id} published to DigiLocker`)
   }
 
   const handleBulkCommit = (schemaName: string, outcome: BulkOutcome) => {
@@ -52,7 +107,7 @@ export default function DocumentsPage() {
         issued_at: todayIso(),
       })
     })
-    setDocs(prev => [...created, ...prev])
+    persistDocs([...created, ...docs])
     setShowBulk(false)
     notify(
       `Bulk upload: ${created.length} issued, ${outcome.failed.length} failed of ${outcome.total}`,
@@ -68,8 +123,8 @@ export default function DocumentsPage() {
       notify('Revocation reason must be 1-500 characters.', 'error')
       return
     }
-    setDocs(prev =>
-      prev.map(d =>
+    persistDocs(
+      docs.map(d =>
         d.credential_id === doc.credential_id
           ? { ...d, status: 'revoked' as const }
           : d,
@@ -159,6 +214,7 @@ export default function DocumentsPage() {
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Schema</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Beneficiary</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">DigiLocker</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Issued</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -184,6 +240,16 @@ export default function DocumentsPage() {
                     {doc.status}
                   </span>
                 </td>
+                <td className="px-6 py-4">
+                  {statusOf(pushes, doc.credential_id) === 'success' ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                      <CheckCircle2 size={14} />
+                      Published
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">Not published</span>
+                  )}
+                </td>
                 <td className="px-6 py-4 text-sm text-gray-500">{doc.issued_at}</td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-1">
@@ -194,6 +260,17 @@ export default function DocumentsPage() {
                     >
                       <Download size={15} />
                     </button>
+                    {doc.status === 'stored' &&
+                      statusOf(pushes, doc.credential_id) !== 'success' && (
+                        <button
+                          onClick={() => handlePublish(doc)}
+                          className="p-1.5 text-gray-400 hover:text-brand-600 rounded"
+                          title="Publish to DigiLocker"
+                          aria-label={`Publish ${doc.credential_id} to DigiLocker`}
+                        >
+                          <Smartphone size={15} />
+                        </button>
+                      )}
                     {doc.status === 'stored' && (
                       <button
                         onClick={() => handleRevoke(doc)}
@@ -209,7 +286,7 @@ export default function DocumentsPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-400">
+                <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-400">
                   No documents match "{searchQuery}".
                 </td>
               </tr>

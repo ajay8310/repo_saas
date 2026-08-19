@@ -8,6 +8,7 @@ import UnauthorizedPage from './pages/UnauthorizedPage'
 import TenantsPage from './pages/admin/TenantsPage'
 import SchemasPage from './pages/tenant/SchemasPage'
 import DocumentsPage from './pages/tenant/DocumentsPage'
+import DigiLockerPage from './pages/tenant/DigiLockerPage'
 import AuditLogsPage from './pages/tenant/AuditLogsPage'
 import WebhooksPage from './pages/tenant/WebhooksPage'
 import MyDocumentsPage from './pages/beneficiary/MyDocumentsPage'
@@ -75,6 +76,14 @@ export default function App() {
           element={
             <ProtectedRoute requiredRoles={ISSUING_ROLES}>
               <DocumentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="digilocker"
+          element={
+            <ProtectedRoute requiredRoles={ISSUING_ROLES}>
+              <DigiLockerPage />
             </ProtectedRoute>
           }
         />

@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, Building2, FileText, Database,
-  Webhook, ScrollText, LogOut, FolderOpen, User, ShieldCheck, Bell
+  Webhook, ScrollText, LogOut, FolderOpen, User, ShieldCheck, Bell, Smartphone
 } from 'lucide-react'
 
 export default function Layout() {
@@ -20,6 +20,7 @@ export default function Layout() {
     { to: '/tenants', label: 'Tenants', icon: Building2, show: hasRole('super_admin') },
     { to: '/schemas', label: 'Schemas', icon: Database, show: isIssuing },
     { to: '/documents', label: 'Documents', icon: FileText, show: isIssuing },
+    { to: '/digilocker', label: 'DigiLocker', icon: Smartphone, show: isIssuing },
     { to: '/my-documents', label: 'My Documents', icon: FolderOpen, show: hasRole('beneficiary') },
     { to: '/notifications', label: 'Notifications', icon: Bell, show: hasRole('beneficiary') },
     { to: '/audit-logs', label: 'Audit Logs', icon: ScrollText, show: isAdmin },
