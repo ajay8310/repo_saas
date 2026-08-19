@@ -30,6 +30,7 @@ from app.errors.handlers import register_exception_handlers
 from app.logging_config import configure_logging
 from app.routers import anchoring as anchoring_router
 from app.routers import auth as auth_router
+from app.routers import digilocker as digilocker_router
 from app.routers import privacy as privacy_router
 from app.routers import tenants as tenants_router
 from app.routers import schemas as schemas_router
@@ -190,6 +191,7 @@ def _register_routes(app: FastAPI, settings) -> None:  # noqa: ANN001
     app.include_router(audit_router.router, prefix=settings.api_v1_prefix)
     app.include_router(anchoring_router.router, prefix=settings.api_v1_prefix)
     app.include_router(privacy_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(digilocker_router.router, prefix=settings.api_v1_prefix)
 
 
 # ---------------------------------------------------------------------------

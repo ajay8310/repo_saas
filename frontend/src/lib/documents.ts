@@ -26,6 +26,44 @@ export const SCHEMA_OPTIONS = [
   'Land Title Deed',
 ] as const
 
+/**
+ * Seed documents for the demo.
+ *
+ * Shared through localStorage rather than held in one page's state: the
+ * DigiLocker view has to show the same credentials as the Documents view, and a
+ * credential issued in one must be publishable from the other.
+ */
+export const SAMPLE_DOCUMENTS: DocumentRow[] = [
+  { credential_id: 'cred-001', schema_name: 'Degree Certificate', beneficiary_id: 'john.doe@email.com', status: 'stored', issued_at: '2025-06-01' },
+  { credential_id: 'cred-002', schema_name: 'Professional License', beneficiary_id: 'jane.smith@email.com', status: 'stored', issued_at: '2025-05-28' },
+  { credential_id: 'cred-003', schema_name: 'Degree Certificate', beneficiary_id: 'bob.wilson@email.com', status: 'revoked', issued_at: '2025-04-15' },
+  { credential_id: 'cred-004', schema_name: 'Land Title Deed', beneficiary_id: 'alice.brown@email.com', status: 'stored', issued_at: '2025-03-20' },
+  { credential_id: 'cred-005', schema_name: 'Professional License', beneficiary_id: 'charlie.davis@email.com', status: 'stored', issued_at: '2025-02-10' },
+]
+
+const DOCUMENTS_KEY = 'reposaas.demo.documents.v1'
+
+/** Load the shared demo document list, seeding it on first use. */
+export function loadDocuments(): DocumentRow[] {
+  try {
+    const raw = window.localStorage.getItem(DOCUMENTS_KEY)
+    if (!raw) return [...SAMPLE_DOCUMENTS]
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.length ? parsed : [...SAMPLE_DOCUMENTS]
+  } catch {
+    // Private browsing or a corrupted value shouldn't break the page.
+    return [...SAMPLE_DOCUMENTS]
+  }
+}
+
+export function saveDocuments(docs: DocumentRow[]): void {
+  try {
+    window.localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs))
+  } catch {
+    // Persistence is a convenience here, not a requirement.
+  }
+}
+
 /** Generate a short credential ID for locally-created rows. */
 export function generateCredentialId(existing: DocumentRow[]): string {
   const max = existing.reduce((acc, d) => {

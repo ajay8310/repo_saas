@@ -333,6 +333,51 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # DigiLocker connector
     # ------------------------------------------------------------------
+    digilocker_mode: Literal["sandbox", "live"] = Field(
+        default="sandbox",
+        description=(
+            "'live' calls the configured DigiLocker issuer API.  'sandbox' "
+            "simulates a successful publication locally and records a synthetic "
+            "URI — so the issuance workflow is exercisable before Meripehchaan "
+            "credentials are provisioned, without silently pretending to be live."
+        ),
+    )
+    digilocker_base_url: str = Field(
+        default="",
+        description=(
+            "Base URL of the DigiLocker Issuer API, e.g. "
+            "https://api.digitallocker.gov.in/public/issuer/1/xml.  Required "
+            "when digilocker_mode='live'."
+        ),
+    )
+    digilocker_token_url: str = Field(
+        default="",
+        description=(
+            "OAuth 2.0 token endpoint used for the client-credentials grant. "
+            "Required when digilocker_mode='live'."
+        ),
+    )
+    digilocker_client_id: str = Field(
+        default="", description="OAuth 2.0 client id issued by DigiLocker."
+    )
+    digilocker_client_secret: str = Field(
+        default="", description="OAuth 2.0 client secret issued by DigiLocker."
+    )
+    digilocker_issuer_id: str = Field(
+        default="",
+        description=(
+            "Issuer identifier registered with DigiLocker (the 'orgid'). "
+            "Appears in every issued document URI."
+        ),
+    )
+    digilocker_default_doctype: str = Field(
+        default="OTHER",
+        description=(
+            "Fallback DigiLocker document type when a schema does not declare "
+            "one.  DigiLocker rejects unknown doctypes, so this stays "
+            "conservative."
+        ),
+    )
     digilocker_push_timeout_seconds: int = Field(
         default=10,
         ge=1,
@@ -495,6 +540,35 @@ class Settings(BaseSettings):
         description="ClamAV sidecar port",
     )
 
+
+    @model_validator(mode="after")
+    def validate_digilocker_configuration(self) -> Settings:
+        """Refuse to start in live DigiLocker mode without the credentials.
+
+        Checked at startup rather than on first push: discovering that
+        publication was misconfigured only when a citizen's certificate fails to
+        appear is far too late, and the failure would look like a transient
+        retry rather than a configuration error.
+        """
+        if self.digilocker_mode != "live":
+            return self
+
+        missing = [
+            name
+            for name, value in (
+                ("digilocker_base_url", self.digilocker_base_url),
+                ("digilocker_token_url", self.digilocker_token_url),
+                ("digilocker_client_id", self.digilocker_client_id),
+                ("digilocker_client_secret", self.digilocker_client_secret),
+                ("digilocker_issuer_id", self.digilocker_issuer_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                "digilocker_mode='live' requires: " + ", ".join(missing)
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_vault_configuration(self) -> Settings:
