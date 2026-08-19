@@ -21,7 +21,11 @@ class Webhook(Base, UUIDPrimaryKeyMixin):
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # Non-reversible fingerprint, kept for audit and equality checks only.
     secret_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Vault envelope holding the actual signing secret.  HMAC signatures must be
+    # computed over the secret the receiver holds, which a hash cannot provide.
+    secret_sealed: Mapped[str | None] = mapped_column(String, nullable=True)
     event_types: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="'[]'")
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="active")
     created_at: Mapped[datetime] = mapped_column(

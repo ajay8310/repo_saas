@@ -42,12 +42,45 @@ def get_celery_app() -> Celery:
             "app.tasks.notifications",
             "app.tasks.webhooks",
             "app.tasks.anomaly_detection",
+            "app.tasks.digilocker",
+            "app.tasks.retention",
+            "app.tasks.anchoring",
         ],
         # Beat schedule for periodic tasks
         beat_schedule={
             "anomaly-detection-sweep": {
                 "task": "app.tasks.anomaly_detection.run_anomaly_sweep",
                 "schedule": 60.0,  # Every 60 seconds (Req 10.6)
+            },
+            # Retries DigiLocker pushes left pending/retrying. Previously
+            # attempt_push had no caller at all, so failed pushes were never
+            # retried (Req 12.2).
+            "digilocker-retry-sweep": {
+                "task": "app.tasks.digilocker.sweep_digilocker_retries",
+                "schedule": 300.0,
+            },
+            # Refreshes the storage-usage view the quota trigger reads. It was
+            # never refreshed, leaving quota enforcement permanently inert
+            # (Req 3.7).
+            "refresh-storage-usage": {
+                "task": "app.tasks.retention.refresh_storage_usage",
+                "schedule": 300.0,
+            },
+            # Creates next month's audit partition ahead of time. 001 only
+            # bootstrapped a few months (Req 10.4).
+            "audit-partition-maintenance": {
+                "task": "app.tasks.retention.ensure_audit_partitions",
+                "schedule": 86400.0,
+            },
+            # Applies tenants.retention_years / audit_log_retention_years.
+            "retention-purge": {
+                "task": "app.tasks.retention.purge_expired_data",
+                "schedule": 86400.0,
+            },
+            # Seals a Merkle root over newly issued credentials.
+            "anchor-batch": {
+                "task": "app.tasks.anchoring.anchor_pending_batch",
+                "schedule": 600.0,
             },
         },
     )

@@ -1,0 +1,21 @@
+python.exe : Vault could not open a value for tenant 
+22222222-2222-2222-2222-222222222222
+At line:1 char:44
++ ... \repo_saas; & "c:\repo_as_service\repo_saas\.venv\Scripts\python.exe" ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Vault could not...22-222222222222 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+PASS envelope shape True
+PASS roundtrip True
+PASS ciphertext hides value True
+PASS cross-tenant rejected
+PASS tamper rejected
+PASS nonce is random True
+PASS index deterministic True
+PASS index tenant-scoped True
+PASS none passthrough True
+PASS legacy plaintext passthrough True
+PASS shred returns none True
+EXIT=0

@@ -11,7 +11,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AnyHttpUrl, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -364,6 +364,52 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Data vault (field-level PII protection)
+    # ------------------------------------------------------------------
+    vault_provider: Literal["local", "kms"] = Field(
+        default="local",
+        description=(
+            "Backend used to seal personal-data fields.  'local' derives keys "
+            "from vault_root_key; 'kms' performs envelope encryption via AWS KMS."
+        ),
+    )
+    vault_root_key: str = Field(
+        default="",
+        description=(
+            "Base64 or hex root key (>=32 bytes) for the 'local' vault provider. "
+            "Per-tenant keys are HKDF-derived from it; it is never used directly."
+        ),
+    )
+    vault_active_key_id: str = Field(
+        default="k1",
+        description=(
+            "Identifier recorded in every new ciphertext envelope.  Bump this "
+            "alongside vault_root_key to rotate; existing values stay readable "
+            "because the envelope carries the id it was sealed with."
+        ),
+    )
+    vault_kms_key_arn: str = Field(
+        default="",
+        description="CMK ARN used when vault_provider is 'kms'.",
+    )
+    vault_blind_index_key: str = Field(
+        default="",
+        description=(
+            "Base64 or hex HMAC key for deterministic blind indexes.  Rotating "
+            "this invalidates every index column and requires a backfill, so it "
+            "is kept separate from vault_root_key."
+        ),
+    )
+    pii_encryption_enabled: bool = Field(
+        default=False,
+        description=(
+            "Master switch for sealing personal-data columns.  Off by default so "
+            "an existing deployment keeps working until the operator has "
+            "provisioned keys and run the backfill."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Malware scanning
     # ------------------------------------------------------------------
     clamav_host: str = Field(
@@ -376,6 +422,32 @@ class Settings(BaseSettings):
         le=65535,
         description="ClamAV sidecar port",
     )
+
+
+    @model_validator(mode="after")
+    def validate_vault_configuration(self) -> Settings:
+        """Fail fast when PII encryption is on but unusable.
+
+        Catching this at startup matters more than usual: if the vault is
+        misconfigured we must not fall back to writing plaintext personal data,
+        and discovering that on the first upload is far too late.
+        """
+        if not self.pii_encryption_enabled:
+            return self
+
+        if not self.vault_blind_index_key:
+            raise ValueError(
+                "pii_encryption_enabled requires vault_blind_index_key to be set"
+            )
+        if self.vault_provider == "local" and not self.vault_root_key:
+            raise ValueError(
+                "vault_provider='local' requires vault_root_key to be set"
+            )
+        if self.vault_provider == "kms" and not self.vault_kms_key_arn:
+            raise ValueError(
+                "vault_provider='kms' requires vault_kms_key_arn to be set"
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

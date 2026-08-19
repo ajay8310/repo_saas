@@ -47,12 +47,21 @@ class DigiLockerConnector:
         await self.db.refresh(push)
         return push
 
-    async def attempt_push(self, push_id: UUID) -> bool:
+    async def attempt_push(
+        self, push_id: UUID, tenant_id: UUID | None = None
+    ) -> bool:
         """Attempt to push a document to DigiLocker.
 
         On failure: increments attempt_count, schedules retry.
         After max retries: marks permanently_failed.
+
+        *tenant_id* is optional only for backwards compatibility. Supply it
+        wherever it is known: ``digilocker_pushes`` is RLS-protected, so without
+        a tenant context the SELECT below matches no rows.
         """
+        if tenant_id is not None:
+            await set_tenant_context(self.db, str(tenant_id))
+
         result = await self.db.execute(
             select(DigiLockerPush).where(DigiLockerPush.id == push_id)
         )

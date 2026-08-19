@@ -26,6 +26,7 @@ from app.config import get_settings
 from app.db.session import get_db
 from app.middleware.tenant_context import set_tenant_context
 from app.models.webhook import Webhook, WebhookEvent
+from app.services.vault import VaultError, get_vault_service
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +53,16 @@ class WebhookService:
         await set_tenant_context(self.db, str(tenant_id))
         secret_hash = hashlib.sha256(secret.encode()).hexdigest()
 
+        # Seal the secret so deliver_event can sign with the value the receiver
+        # actually holds.  The hash stays for audit but cannot be used to sign.
+        vault = get_vault_service()
+        secret_sealed = vault.seal(secret, tenant_id=str(tenant_id))
+
         webhook = Webhook(
             tenant_id=tenant_id,
             url=url,
             secret_hash=secret_hash,
+            secret_sealed=secret_sealed,
             event_types=event_types,
             status="active",
         )
@@ -150,10 +157,36 @@ class WebhookService:
             await self.db.commit()
             return False
 
+        # Recover the signing secret.  Signing with secret_hash (as this used
+        # to) produced a signature no receiver could reproduce.
+        try:
+            secret = get_vault_service().open_text(
+                webhook.secret_sealed, tenant_id=str(event.tenant_id)
+            )
+        except VaultError as exc:
+            logger.error(
+                "Cannot sign webhook event %s: vault unavailable (%s)", event_id, exc
+            )
+            secret = None
+
+        if not secret:
+            # Refuse to send an unverifiable signature.  A receiver validating
+            # signatures would reject it anyway, and one that ignores them would
+            # be accepting unauthenticated data.
+            logger.error(
+                "Webhook %s has no recoverable signing secret; marking event %s "
+                "undelivered. Re-register the webhook to restore delivery.",
+                webhook.id,
+                event_id,
+            )
+            event.status = "undelivered"
+            await self.db.commit()
+            return False
+
         # Serialize payload and compute HMAC signature
         payload_bytes = json.dumps(event.payload, default=str).encode()
         signature = hmac.new(
-            webhook.secret_hash.encode(),
+            secret.encode(),
             payload_bytes,
             hashlib.sha256,
         ).hexdigest()

@@ -11,9 +11,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from app.dependencies.auth import TokenPayload, get_current_user
 from app.rbac.permissions import require_permission
+from app.tasks.dispatch import enqueue_bulk_upload
 from app.services.document_service import (
     DocumentAlreadyRevokedError,
     DocumentNotFoundError,
@@ -72,6 +74,18 @@ class BulkUploadRequest(BaseModel):
 class BulkJobResponse(BaseModel):
     job_id: str
     status: str
+
+
+class BulkJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    total_records: int
+    processed_count: int
+    success_count: int
+    failed_count: int
+    summary: dict | None
+    created_at: str | None
+    completed_at: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -259,10 +273,77 @@ async def bulk_upload(
     await service.db.commit()
     await service.db.refresh(job)
 
-    # In production: enqueue Celery task
-    # process_bulk_upload.delay(str(job.id), str(user.tenant_id), ...)
+    # Hand the batch to the worker.  This used to be a commented-out line, so
+    # the endpoint returned a job_id that never left 'pending'.
+    enqueued = enqueue_bulk_upload(
+        job_id=str(job.id),
+        tenant_id=str(user.tenant_id),
+        schema_id=body.schema_id,
+        cmk_arn=body.cmk_arn,
+        records=body.records,
+    )
+    if not enqueued:
+        # No broker reachable. Say so rather than reporting an accepted job
+        # that will never be processed.
+        job.status = "failed"
+        job.summary = {
+            "error": "QUEUE_UNAVAILABLE",
+            "message": "Bulk upload could not be queued; no worker broker reachable.",
+        }
+        await service.db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "QUEUE_UNAVAILABLE",
+                "message": (
+                    "Bulk upload requires the background worker, which is "
+                    "currently unreachable. No records were processed."
+                ),
+            },
+        )
 
     return BulkJobResponse(job_id=str(job.id), status="pending")
+
+
+@router.get(
+    "/bulk/{job_id}",
+    response_model=BulkJobStatusResponse,
+    dependencies=[Depends(require_permission("document:bulk_upload"))],
+)
+async def get_bulk_job(
+    job_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+) -> BulkJobStatusResponse:
+    """Report progress for a bulk upload job (Req 3.8, 3.9).
+
+    Without this a caller received a job_id from POST /documents/bulk with no
+    way to discover the outcome.
+    """
+    from app.middleware.tenant_context import set_tenant_context
+    from app.models.document import BulkJob
+
+    await set_tenant_context(service.db, str(user.tenant_id))
+    result = await service.db.execute(select(BulkJob).where(BulkJob.id == job_id))
+    job = result.scalar_one_or_none()
+
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Bulk job not found."},
+        )
+
+    return BulkJobStatusResponse(
+        job_id=str(job.id),
+        status=job.status,
+        total_records=job.total_records,
+        processed_count=job.processed_count,
+        success_count=job.success_count,
+        failed_count=job.failed_count,
+        summary=job.summary,
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+    )
 
 
 def _doc_response(doc) -> DocumentResponse:
