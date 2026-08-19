@@ -13,6 +13,7 @@ import WebhooksPage from './pages/tenant/WebhooksPage'
 import MyDocumentsPage from './pages/beneficiary/MyDocumentsPage'
 import NotificationsPage from './pages/beneficiary/NotificationsPage'
 import VerifyPage from './pages/public/VerifyPage'
+import LandingPage from './pages/public/LandingPage'
 
 /**
  * Role sets per area, mirroring ROLE_PERMISSIONS in app/rbac/permissions.py.
@@ -28,6 +29,12 @@ export default function App() {
   return (
     <Routes>
       {/* Public */}
+      {/* "/" is the marketing landing page for visitors. Signed-in users are
+          sent straight to their console instead. */}
+      <Route
+        path="/"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />}
+      />
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />}
@@ -36,16 +43,15 @@ export default function App() {
       <Route path="/verify" element={<VerifyPage />} />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-      {/* Authenticated */}
+      {/* Authenticated. Pathless layout route: the shell wraps these children
+          without claiming "/", which the landing page now owns. */}
       <Route
-        path="/"
         element={
           <ProtectedRoute>
             <Layout />
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
 
         <Route
@@ -106,7 +112,10 @@ export default function App() {
         />
       </Route>
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Unknown paths go to "/", which decides between the landing page and
+          the console based on auth state. Sending visitors to /dashboard sent
+          them through a pointless bounce to /login. */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

@@ -157,21 +157,37 @@ async def verify_anchor(
             detail={"code": "INVALID_LEAF", "message": "leaf_hash is not valid hex."},
         )
 
+    # The Merkle check is pure arithmetic over caller-supplied data. It runs
+    # first and never touches the database, so proof verification keeps working
+    # even when this platform's storage is degraded — which is the entire point
+    # of handing a relying party a self-contained proof bundle.
     proof_valid = verify_inclusion_from_leaf(leaf, proof, body.root_hex)
 
     # Independently confirm the ledger still reports this root. A valid proof
     # against a root nobody anchored proves nothing about when it existed.
+    # Best-effort: a lookup failure downgrades the answer, it does not fail it.
     ledger_ref: str | None = None
     ledger_agrees: bool | None = None
     anchored_at: str | None = None
+    batch = None
 
-    batch = (
-        await service.db.execute(
-            select(AnchorBatch)
-            .where(AnchorBatch.root_hex == body.root_hex, AnchorBatch.status == "anchored")
-            .limit(1)
+    try:
+        batch = (
+            await service.db.execute(
+                select(AnchorBatch)
+                .where(
+                    AnchorBatch.root_hex == body.root_hex,
+                    AnchorBatch.status == "anchored",
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "Could not look up anchor batch for root %s; returning proof result only",
+            body.root_hex,
+            exc_info=True,
         )
-    ).scalar_one_or_none()
 
     if batch is not None:
         ledger_ref = batch.ledger_ref
