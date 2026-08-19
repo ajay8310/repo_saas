@@ -1,0 +1,9 @@
+PASS app imports
+PASS task modules import
+PASS models import True
+PASS stored-digest proofs verify True
+PASS canonical leaf is stable True
+PASS ref hides beneficiary True
+PASS ref is tenant scoped True
+PASS bulk status route registered True
+EXIT=0

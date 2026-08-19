@@ -16,6 +16,7 @@ Usage (production via Docker):
 
 from __future__ import annotations
 
+import logging
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -26,7 +27,10 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.errors.handlers import register_exception_handlers
+from app.logging_config import configure_logging
+from app.routers import anchoring as anchoring_router
 from app.routers import auth as auth_router
+from app.routers import privacy as privacy_router
 from app.routers import tenants as tenants_router
 from app.routers import schemas as schemas_router
 from app.routers import documents as documents_router
@@ -43,11 +47,42 @@ from app.routers import audit as audit_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
-    """Execute startup tasks before yielding and cleanup on shutdown."""
-    # Startup: additional initialisation (DB connection pool, Redis, etc.)
-    # will be added in subsequent tasks (1.2, 1.3).
+    """Configure logging on startup and release pooled resources on shutdown."""
+    settings = get_settings()
+
+    configure_logging(
+        level=settings.log_level,
+        # Human-readable locally, structured everywhere else.
+        json_output=settings.environment != "development",
+    )
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "Starting %s (environment=%s, vault=%s, anchor=%s)",
+        settings.app_name,
+        settings.environment,
+        settings.vault_provider,
+        settings.anchor_provider,
+    )
+
     yield
-    # Shutdown: release resources here in later tasks.
+
+    # Dispose pooled connections so a reload or shutdown does not leave
+    # PostgreSQL and Redis sessions dangling.
+    try:
+        from app.db.session import engine
+
+        await engine.dispose()
+    except Exception:  # noqa: BLE001 - shutdown must not raise
+        logger.warning("Failed to dispose the database engine cleanly", exc_info=True)
+
+    try:
+        from app.db.redis import close_redis_client
+
+        await close_redis_client()
+    except Exception:  # noqa: BLE001
+        logger.debug("No Redis client to close", exc_info=True)
+
+    logger.info("Shutdown complete")
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +188,8 @@ def _register_routes(app: FastAPI, settings) -> None:  # noqa: ANN001
     app.include_router(notifications_router.router, prefix=settings.api_v1_prefix)
     app.include_router(webhooks_router.router, prefix=settings.api_v1_prefix)
     app.include_router(audit_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(anchoring_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(privacy_router.router, prefix=settings.api_v1_prefix)
 
 
 # ---------------------------------------------------------------------------

@@ -101,11 +101,16 @@ class WebhookService:
         tenant_id: UUID,
         event_type: str,
         payload: dict[str, Any],
-        webhook_secret: str,
-    ) -> int:
-        """Dispatch an event to all matching active webhooks.
+    ) -> list[UUID]:
+        """Record an event for every matching active webhook.
 
-        Returns count of events queued. No joins — queries webhooks by tenant_id.
+        Returns the created event ids so the caller can enqueue delivery. This
+        previously returned a bare count, which left callers no way to hand the
+        events to the worker — and nothing else delivered them, so every event
+        stayed 'pending' indefinitely.
+
+        The ``webhook_secret`` parameter is gone: it was never read, and the
+        signing secret is now recovered per-webhook from the vault at delivery.
         """
         await set_tenant_context(self.db, str(tenant_id))
 
@@ -114,13 +119,12 @@ class WebhookService:
         )
         webhooks = result.scalars().all()
 
-        dispatched = 0
+        events: list[WebhookEvent] = []
         for wh in webhooks:
             # Check if webhook subscribes to this event type
             if wh.event_types and event_type not in wh.event_types:
                 continue
 
-            # Create event record
             event = WebhookEvent(
                 tenant_id=tenant_id,
                 webhook_id=wh.id,
@@ -129,10 +133,13 @@ class WebhookService:
                 status="pending",
             )
             self.db.add(event)
-            dispatched += 1
+            events.append(event)
 
         await self.db.commit()
-        return dispatched
+
+        for event in events:
+            await self.db.refresh(event)
+        return [event.id for event in events]
 
     async def deliver_event(self, event_id: UUID) -> bool:
         """Attempt to deliver a single webhook event.

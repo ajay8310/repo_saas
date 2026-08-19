@@ -1,0 +1,15 @@
+PASS app imports
+PASS route /api/v1/anchors/verify
+PASS route /api/v1/anchors/batches
+PASS route /api/v1/documents/{credential_id}/anchor
+PASS route /api/v1/privacy/notice
+PASS route /api/v1/privacy/consents
+PASS route /api/v1/privacy/requests
+PASS route /api/v1/privacy/erasure-preview
+PASS route /api/v1/documents/bulk/{job_id}
+PASS scrub jwt True
+PASS scrub bearer True
+PASS scrub vault True
+PASS scrub keeps normal text True
+PASS purposes True
+EXIT=0

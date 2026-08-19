@@ -1,0 +1,21 @@
+python.exe : Traceback (most recent call last):
+At line:1 char:44
++ ... \repo_saas; & "c:\repo_as_service\repo_saas\.venv\Scripts\python.exe" ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last) 
+   ::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 27, in <module>
+  File "<string>", line 27, in <lambda>
+NameError: name '_empty' is not defined
+PASS all proofs verify for sizes 1..17
+PASS root deterministic
+PASS root changes with order
+PASS tampered payload rejected
+PASS wrong root rejected
+PASS proof of other leaf rejected
+PASS proof json roundtrip
+PASS domain separation
+PASS proof size is logarithmic
+EXIT=1

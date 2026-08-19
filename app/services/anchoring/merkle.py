@@ -66,11 +66,29 @@ class InclusionProof:
 class MerkleTree:
     """An immutable Merkle tree built from ordered leaf payloads."""
 
+    __slots__ = ("_leaf_hashes", "_levels")
+
     def __init__(self, leaves: list[bytes]) -> None:
         if not leaves:
             raise ValueError("A Merkle tree needs at least one leaf")
         self._leaf_hashes = [leaf_hash(leaf) for leaf in leaves]
         self._levels = self._build(self._leaf_hashes)
+
+    @classmethod
+    def from_leaf_hashes(cls, leaf_hashes: list[bytes]) -> MerkleTree:
+        """Build a tree from digests that are already leaf hashes.
+
+        Callers that persisted ``leaf_hash(payload)`` at issuance must use this
+        rather than ``__init__``, which would hash the digest a second time and
+        produce a root that no verifier could reproduce from the original
+        payload.
+        """
+        if not leaf_hashes:
+            raise ValueError("A Merkle tree needs at least one leaf")
+        tree = cls.__new__(cls)
+        tree._leaf_hashes = list(leaf_hashes)
+        tree._levels = cls._build(list(leaf_hashes))
+        return tree
 
     @staticmethod
     def _build(leaf_hashes: list[bytes]) -> list[list[bytes]]:
@@ -126,13 +144,11 @@ class MerkleTree:
         )
 
 
-def verify_inclusion(payload: bytes, proof: InclusionProof, root_hex: str) -> bool:
-    """Recompute the root from *payload* and *proof* and compare it to *root_hex*.
-
-    A verifier only needs the credential, the proof, and the anchored root — not
-    the rest of the batch, and not this platform's database.
-    """
-    computed = leaf_hash(payload)
+def verify_inclusion_from_leaf(
+    leaf_digest: bytes, proof: InclusionProof, root_hex: str
+) -> bool:
+    """Recompute the root from an already-hashed leaf."""
+    computed = leaf_digest
     for position, sibling_hex in proof.siblings:
         sibling = bytes.fromhex(sibling_hex)
         computed = (
@@ -141,69 +157,6 @@ def verify_inclusion(payload: bytes, proof: InclusionProof, root_hex: str) -> bo
             else node_hash(computed, sibling)
         )
     return computed.hex() == root_hex
-
-
-class MerkleTree:
-    """An immutable Merkle tree built from ordered leaf payloads."""
-
-    def __init__(self, leaves: list[bytes]) -> None:
-        if not leaves:
-            raise ValueError("A Merkle tree needs at least one leaf")
-        self._leaf_hashes = [leaf_hash(leaf) for leaf in leaves]
-        self._levels = self._build(self._leaf_hashes)
-
-    @staticmethod
-    def _build(leaf_hashes: list[bytes]) -> list[list[bytes]]:
-        levels = [leaf_hashes]
-        current = leaf_hashes
-        while len(current) > 1:
-            nxt: list[bytes] = []
-            for i in range(0, len(current) - 1, 2):
-                nxt.append(node_hash(current[i], current[i + 1]))
-            if len(current) % 2 == 1:
-                # Promote the odd tail rather than duplicating it.
-                nxt.append(current[-1])
-            levels.append(nxt)
-            current = nxt
-        return levels
-
-    @property
-    def root(self) -> bytes:
-        return self._levels[-1][0]
-
-    @property
-    def root_hex(self) -> str:
-        return self.root.hex()
-
-    @property
-    def leaf_count(self) -> int:
-        return len(self._leaf_hashes)
-
-    def proof_for(self, index: int) -> InclusionProof:
-        """Build the inclusion proof for the leaf at *index*."""
-        if not 0 <= index < self.leaf_count:
-            raise IndexError(f"Leaf index {index} out of range")
-
-        siblings: list[tuple[str, str]] = []
-        position = index
-
-        for level in self._levels[:-1]:
-            if position % 2 == 0:
-                sibling = position + 1
-                if sibling >= len(level):
-                    # Promoted node: nothing to combine with at this level.
-                    position //= 2
-                    continue
-                siblings.append(("R", level[sibling].hex()))
-            else:
-                siblings.append(("L", level[position - 1].hex()))
-            position //= 2
-
-        return InclusionProof(
-            leaf_index=index,
-            leaf_count=self.leaf_count,
-            siblings=tuple(siblings),
-        )
 
 
 def verify_inclusion(payload: bytes, proof: InclusionProof, root_hex: str) -> bool:
@@ -212,12 +165,4 @@ def verify_inclusion(payload: bytes, proof: InclusionProof, root_hex: str) -> bo
     A verifier needs only the credential, the proof, and the anchored root — not
     the rest of the batch, and not this platform's database.
     """
-    computed = leaf_hash(payload)
-    for position, sibling_hex in proof.siblings:
-        sibling = bytes.fromhex(sibling_hex)
-        computed = (
-            node_hash(sibling, computed)
-            if position == "L"
-            else node_hash(computed, sibling)
-        )
-    return computed.hex() == root_hex
+    return verify_inclusion_from_leaf(leaf_hash(payload), proof, root_hex)

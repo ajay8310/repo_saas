@@ -15,3 +15,5 @@ from app.models.audit import AuditLog  # noqa: F401
 from app.models.webhook import Webhook, WebhookEvent  # noqa: F401
 from app.models.notification import NotificationPreference  # noqa: F401
 from app.models.digilocker import DigiLockerPush  # noqa: F401
+from app.models.anchor import AnchorBatch, DocumentAnchor  # noqa: F401
+from app.models.consent import ConsentRecord, ErasureRequest  # noqa: F401

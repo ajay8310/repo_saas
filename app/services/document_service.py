@@ -11,6 +11,7 @@ Requirements: 3.1, 3.3, 3.4, 3.5, 3.7, 3.11, 4.1-4.9, 6.1-6.7
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import uuid as uuid_mod
@@ -208,7 +209,28 @@ class DocumentService:
 
         await self.db.commit()
 
-        # 7. Fire-and-forget async events (notifications, webhooks, DigiLocker)
+        # 7. Commit the credential to the anchoring batch. Recorded here rather
+        # than in the batch sweep so the digest is fixed at issuance time, and
+        # over the plaintext hash rather than the ciphertext so key rotation
+        # cannot invalidate historical proofs.
+        try:
+            from app.services.anchoring import AnchoringService
+
+            await self.db.refresh(doc)
+            anchoring = AnchoringService(db=self.db, settings=self.settings)
+            await anchoring.record_document(
+                tenant_id=tenant_id,
+                document=doc,
+                content_sha256=hashlib.sha256(content).hexdigest(),
+            )
+        except Exception:
+            # A missing anchor is recoverable (the sweep can backfill it); a
+            # failed issuance is not.
+            logger.exception(
+                "Could not record anchor commitment for %s", credential_id
+            )
+
+        # 8. Fire-and-forget async events (notifications, webhooks, DigiLocker)
         await self._dispatch_upload_events(tenant_id, credential_id, beneficiary_id)
 
         return UploadResult(credential_id=credential_id, status="stored")
@@ -231,21 +253,31 @@ class DocumentService:
                 payload={"credential_id": credential_id, "message": "A new document has been issued to you."},
             )
 
-            # Webhook dispatch
+            # Webhook dispatch writes pending event rows...
             webhook_svc = WebhookService(db=self.db)
-            await webhook_svc.dispatch_event(
+            event_ids = await webhook_svc.dispatch_event(
                 tenant_id=tenant_id,
                 event_type="document.uploaded",
                 payload={"credential_id": credential_id, "beneficiary_id": beneficiary_id},
-                webhook_secret="",  # Secret comes from the webhook registration
             )
 
-            # DigiLocker push (enqueue for async processing)
+            # ...and the worker actually delivers them. Without this the rows
+            # sat at 'pending' forever, since deliver_event had no caller.
+            from app.tasks.dispatch import (
+                enqueue_digilocker_push,
+                enqueue_webhook_delivery,
+            )
+
+            for event_id in event_ids:
+                enqueue_webhook_delivery(str(event_id))
+
+            # DigiLocker push: record intent, then ask the worker to attempt it.
             dl_connector = DigiLockerConnector(db=self.db, settings=self.settings)
-            await dl_connector.enqueue_push(
+            push = await dl_connector.enqueue_push(
                 tenant_id=tenant_id,
                 document_id=UUID(credential_id),
             )
+            enqueue_digilocker_push(str(push.id))
         except Exception as exc:
             # Events are best-effort; don't fail the upload
             logger.warning("Post-upload event dispatch error (non-fatal): %s", exc)
@@ -522,6 +554,7 @@ class DocumentService:
         try:
             from app.services.notification_service import NotificationService
             from app.services.webhook_service import WebhookService
+            from app.tasks.dispatch import enqueue_webhook_delivery
 
             notifier = NotificationService(db=self.db, settings=self.settings)
             await notifier.notify(
@@ -533,12 +566,13 @@ class DocumentService:
             )
 
             webhook_svc = WebhookService(db=self.db)
-            await webhook_svc.dispatch_event(
+            event_ids = await webhook_svc.dispatch_event(
                 tenant_id=tenant_id,
                 event_type="document.revoked",
                 payload={"credential_id": str(credential_id), "reason": reason},
-                webhook_secret="",
             )
+            for event_id in event_ids:
+                enqueue_webhook_delivery(str(event_id))
         except Exception as exc:
             logger.warning("Post-revocation event dispatch error (non-fatal): %s", exc)
 

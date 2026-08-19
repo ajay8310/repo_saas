@@ -364,6 +364,78 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Ledger anchoring
+    # ------------------------------------------------------------------
+    anchor_provider: Literal["local", "evm", "fabric"] = Field(
+        default="local",
+        description=(
+            "Ledger used to publish Merkle roots.  'local' is an append-only "
+            "hash-chained log in this database (tamper-evident, no external "
+            "dependency, but no third-party non-repudiation); 'evm' publishes to "
+            "an EVM chain; 'fabric' is not implemented."
+        ),
+    )
+    anchor_rpc_url: str = Field(
+        default="",
+        description="JSON-RPC endpoint of the chain, when anchor_provider='evm'.",
+    )
+    anchor_signer_url: str = Field(
+        default="",
+        description=(
+            "Signing service that holds the anchoring key and broadcasts "
+            "transactions.  Keys are deliberately kept out of this process."
+        ),
+    )
+    anchor_contract_address: str = Field(
+        default="",
+        description="Contract that records anchored roots, when anchor_provider='evm'.",
+    )
+    anchor_batch_max_leaves: int = Field(
+        default=4096,
+        ge=1,
+        description=(
+            "Maximum credentials per anchored batch.  Larger batches cost less "
+            "per credential but lengthen inclusion proofs and delay anchoring."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Consent and data-principal rights (DPDP Act)
+    # ------------------------------------------------------------------
+    consent_notice_version: str = Field(
+        default="v1",
+        description=(
+            "Identifier of the consent notice currently shown to data "
+            "principals.  Stored on every consent record so the platform can "
+            "prove what a principal was told at the time they agreed."
+        ),
+    )
+    consent_default_expiry_days: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Days after which a consent grant lapses; 0 means it does not "
+            "expire on a timer and persists until withdrawn."
+        ),
+    )
+    grievance_officer_email: str = Field(
+        default="",
+        description=(
+            "Contact published for data-principal grievances.  The DPDP Act "
+            "requires a reachable escalation path, so this is surfaced by the "
+            "rights endpoint."
+        ),
+    )
+    erasure_grace_days: int = Field(
+        default=30,
+        ge=0,
+        description=(
+            "Days an erasure request is held before execution, allowing "
+            "recovery from a mistaken or coerced request."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Data vault (field-level PII protection)
     # ------------------------------------------------------------------
     vault_provider: Literal["local", "kms"] = Field(

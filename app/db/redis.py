@@ -51,3 +51,18 @@ async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
     finally:
         # Connection is returned to the pool automatically; no explicit close needed.
         pass
+
+
+async def close_redis_client() -> None:
+    """Disconnect the shared pool on shutdown.
+
+    Without this, a reload or restart leaves connections open on the Redis
+    server until they time out, which is noticeable under a process manager
+    that restarts workers frequently.
+    """
+    if _get_pool.cache_info().currsize == 0:
+        # Never initialised in this process; nothing to tear down.
+        return
+    pool = _get_pool()
+    await pool.disconnect()
+    _get_pool.cache_clear()
