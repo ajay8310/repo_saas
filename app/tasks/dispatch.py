@@ -52,7 +52,7 @@ def enqueue_bulk_upload(
     job_id: str,
     tenant_id: str,
     schema_id: str,
-    cmk_arn: str,
+    cmk_arn: str | None,
     records: list[dict],
 ) -> bool:
     """Queue a bulk upload batch for processing."""

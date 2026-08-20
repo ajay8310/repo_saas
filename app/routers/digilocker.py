@@ -147,7 +147,10 @@ async def connector_status(
 )
 async def publish_to_digilocker(
     credential_id: UUID,
-    body: PublishRequest | None = None,
+    # Defaulted rather than Optional-with-None so the OpenAPI document describes
+    # a real object; `PublishRequest | None = None` rendered as an untyped body
+    # and gave the generated client nothing to work with.
+    body: PublishRequest = PublishRequest(),
     user: TokenPayload = Depends(get_current_user),
     connector: DigiLockerConnector = Depends(get_digilocker_connector),
     documents: DocumentService = Depends(get_document_service),
@@ -184,7 +187,7 @@ async def publish_to_digilocker(
     result = await connector.publish(
         tenant_id=user.tenant_id,
         document_id=credential_id,
-        doctype=body.doctype if body else None,
+        doctype=body.doctype,
     )
 
     await audit.record(

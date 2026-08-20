@@ -32,7 +32,7 @@ def process_bulk_upload(
     tenant_id: str,
     schema_id: str,
     records: list[dict],
-    cmk_arn: str,
+    cmk_arn: str | None = None,
 ) -> dict:
     """Process a bulk upload job.
 
@@ -47,7 +47,7 @@ async def _process_async(
     tenant_id: str,
     schema_id: str,
     records: list[dict],
-    cmk_arn: str,
+    cmk_arn: str | None = None,
 ) -> dict:
     """Async implementation of bulk upload processing."""
     from app.config import get_settings

@@ -37,7 +37,14 @@ class UploadDocumentRequest(BaseModel):
     schema_id: str = Field(..., min_length=1)
     beneficiary_id: str = Field(..., min_length=1, max_length=512)
     content_base64: str = Field(..., min_length=1, description="Base64-encoded document content")
-    cmk_arn: str = Field(..., min_length=1, description="Tenant CMK ARN for encryption")
+    cmk_arn: str | None = Field(
+        default=None,
+        description=(
+            "Optional. Targets a specific CMK already registered to this tenant, "
+            "for use during key rotation. Omit it and the tenant's active key is "
+            "used. An ARN not registered to the tenant is rejected."
+        ),
+    )
 
 
 class UploadResponse(BaseModel):
@@ -67,7 +74,10 @@ class BulkRevokeRequest(BaseModel):
 
 class BulkUploadRequest(BaseModel):
     schema_id: str = Field(...)
-    cmk_arn: str = Field(...)
+    cmk_arn: str | None = Field(
+        default=None,
+        description="Optional; see UploadDocumentRequest.cmk_arn.",
+    )
     records: list[dict] = Field(..., min_length=1, max_length=10000)
 
 

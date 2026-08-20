@@ -121,7 +121,7 @@ class DocumentService:
         schema_id: UUID,
         beneficiary_id: str,
         content: bytes,
-        cmk_arn: str,
+        cmk_arn: str | None = None,
         actor_id: str = "system",
         actor_role: str = "issuer",
     ) -> UploadResult:
@@ -160,9 +160,14 @@ class DocumentService:
                 "Malware scan service unavailable. Upload rejected."
             )
 
-        # 3. Encrypt content (Req 3.6)
+        # 3. Encrypt content (Req 3.6).
+        # The CMK is resolved from the tenant's own key record, not taken from
+        # the caller. Accepting a client-supplied ARN let a tenant point
+        # encryption at any key they could name — including one they control,
+        # which would hand them the plaintext DEK for their own documents.
+        resolved_cmk = await self._resolve_cmk(tenant_id, cmk_arn)
         try:
-            encrypted = self._encryption.encrypt(content, cmk_arn)
+            encrypted = self._encryption.encrypt(content, resolved_cmk)
         except EncryptionUnavailableError:
             raise ServiceUnavailableError("Encryption service unavailable")
 
@@ -234,6 +239,42 @@ class DocumentService:
         await self._dispatch_upload_events(tenant_id, credential_id, beneficiary_id)
 
         return UploadResult(credential_id=credential_id, status="stored")
+
+    async def _resolve_cmk(self, tenant_id: UUID, requested: str | None) -> str:
+        """Return the tenant's active CMK ARN.
+
+        A caller-supplied value is honoured only when it matches a key actually
+        registered to this tenant. That keeps the parameter usable for key
+        rotation (targeting a specific registered key) while refusing an
+        arbitrary ARN.
+        """
+        from app.models.tenant import TenantEncryptionKey
+
+        await set_tenant_context(self.db, str(tenant_id))
+        rows = (
+            await self.db.execute(
+                select(TenantEncryptionKey).where(
+                    TenantEncryptionKey.tenant_id == tenant_id,
+                    TenantEncryptionKey.status.in_(("active", "pending_rotation")),
+                )
+            )
+        ).scalars().all()
+
+        if not rows:
+            raise ServiceUnavailableError(
+                "No encryption key is provisioned for this tenant. Provision a "
+                "CMK before issuing documents."
+            )
+
+        if requested:
+            if any(k.kms_key_arn == requested for k in rows):
+                return requested
+            raise DocumentValidationError(
+                "cmk_arn is not a key registered to this tenant."
+            )
+
+        active = next((k for k in rows if k.status == "active"), rows[0])
+        return active.kms_key_arn
 
     async def _dispatch_upload_events(
         self, tenant_id: UUID, credential_id: str, beneficiary_id: str
