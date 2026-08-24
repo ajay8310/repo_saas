@@ -1,0 +1,102 @@
+version: "3.9"
+
+# Test environment for integration and smoke tests.
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   pytest tests/integration/ tests/smoke/ -m "integration or smoke"
+#   docker compose -f docker-compose.test.yml down -v
+
+services:
+  # ---------- Infrastructure ----------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_pass
+      POSTGRES_DB: test_reposaaas
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_reposaaas"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4567:4566"
+    environment:
+      SERVICES: s3,kms,ses,sns
+      DEFAULT_REGION: ap-south-1
+      EAGER_SERVICE_LOADING: 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  clamav:
+    image: clamav/clamav:stable
+    ports:
+      - "3311:3310"
+    healthcheck:
+      test: ["CMD", "clamdscan", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------- Migrations ----------
+  migrate:
+    build:
+      context: .
+      target: base
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://test_user:test_pass@postgres:5432/test_reposaaas
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- Celery Worker ----------
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://test_user:test_pass@postgres:5432/test_reposaaas
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://localstack:4566
+      KMS_ENDPOINT_URL: http://localstack:4566
+      SES_ENDPOINT_URL: http://localstack:4566
+      SNS_ENDPOINT_URL: http://localstack:4566
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+      ENVIRONMENT: test
+      JWT_PRIVATE_KEY: "${TEST_JWT_PRIVATE_KEY:-placeholder}"
+      JWT_PUBLIC_KEY: "${TEST_JWT_PUBLIC_KEY:-placeholder}"
+      S3_BUCKET_NAME: test-documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully

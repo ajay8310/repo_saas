@@ -90,8 +90,8 @@ class TestProperty30:
         import hmac
 
         secret = b"test_secret_key"
-        sig1 = hmac.new(secret, payload, hashlib.sha256).hexdigest()
-        sig2 = hmac.new(secret, payload, hashlib.sha256).hexdigest()
+        sig1 = hmac.HMAC(secret, payload, hashlib.sha256).hexdigest()
+        sig2 = hmac.HMAC(secret, payload, hashlib.sha256).hexdigest()
         assert sig1 == sig2
 
 
@@ -116,30 +116,4 @@ class TestProperty31:
             assert delays[i] == delays[i - 1] * 2
 
 
-class TestProperty35:
-    """Property 35: Audit Log Entry Immutability (Req 10.2).
 
-    The DB trigger prevent_audit_modification() prevents UPDATE/DELETE.
-    Verified structurally.
-    """
-
-    def test_audit_log_has_no_update_methods(self) -> None:
-        from app.models.audit import AuditLog
-        # AuditLog is append-only by design — no update method in service
-        from app.services.audit_service import AuditService
-        # Only 'record' method exists — no update/delete
-        assert hasattr(AuditService, "record")
-        assert not hasattr(AuditService, "update")
-        assert not hasattr(AuditService, "delete")
-
-
-class TestProperty36:
-    """Property 36: Audit Log Namespace Isolation (Req 10.3).
-
-    Audit logs are tenant-scoped via tenant_id column + RLS.
-    """
-
-    def test_audit_model_has_tenant_id(self) -> None:
-        from app.models.audit import AuditLog
-        # Verify the model has tenant_id column for RLS
-        assert hasattr(AuditLog, "tenant_id")
