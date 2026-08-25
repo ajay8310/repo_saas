@@ -1,0 +1,9 @@
+docker : sh: 1: vite: not found
+At line:1 char:61
++ ... o_as_saas\frontend_logs.txt -Value (docker logs frontend 2>&1 | Out-S ...
++                                         ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (sh: 1: vite: not found:String) [] 
+   , RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+

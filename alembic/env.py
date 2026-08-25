@@ -73,20 +73,22 @@ def do_run_migrations(connection: Connection) -> None:
         context.run_migrations()
 
 
-async def run_async_migrations() -> None:
-    """Run migrations using an async engine."""
-    connectable = async_engine_from_config(
+def run_sync_migrations() -> None:
+    """Run migrations using a sync engine (psycopg2) from the converted URL."""
+    from sqlalchemy import engine_from_config
+
+    connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
-    await connectable.dispose()
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
+    connectable.dispose()
 
 
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    run_sync_migrations()
 
 
 # ---------------------------------------------------------------------------
