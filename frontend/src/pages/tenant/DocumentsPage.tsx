@@ -257,7 +257,7 @@ export default function DocumentsPage() {
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500">{doc.issued_at}</td>
                 <td className="px-6 py-4">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleDownload(doc)}
                       className="p-1.5 text-gray-400 hover:text-brand-600 rounded"
@@ -268,10 +268,21 @@ export default function DocumentsPage() {
                     {doc.status === 'stored' && doc.digilocker_status !== 'success' && doc.digilocker_status !== 'pending' && (
                       <button
                         onClick={() => handlePushToDigiLocker(doc)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition"
                         title="Push to DigiLocker"
                       >
-                        <Send size={15} />
+                        <Send size={12} />
+                        DigiLocker
+                      </button>
+                    )}
+                    {doc.status === 'stored' && doc.digilocker_status === 'failed' && (
+                      <button
+                        onClick={() => handlePushToDigiLocker(doc)}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition"
+                        title="Retry DigiLocker Push"
+                      >
+                        <Send size={12} />
+                        Retry
                       </button>
                     )}
                     {doc.status === 'stored' && (
