@@ -37,14 +37,6 @@ const digilockerStatusLabels: Record<string, string> = {
   not_pushed: '—',
 }
 
-const INITIAL_DOCS: ExtendedDocRow[] = [
-  { credential_id: 'cred-001', schema_name: 'Degree Certificate', beneficiary_id: 'john.doe@email.com', status: 'stored', issued_at: '2025-06-01', digilocker_status: 'success' },
-  { credential_id: 'cred-002', schema_name: 'Professional License', beneficiary_id: 'jane.smith@email.com', status: 'stored', issued_at: '2025-05-28', digilocker_status: 'pending' },
-  { credential_id: 'cred-003', schema_name: 'Degree Certificate', beneficiary_id: 'bob.wilson@email.com', status: 'revoked', issued_at: '2025-04-15', digilocker_status: 'not_pushed' },
-  { credential_id: 'cred-004', schema_name: 'Land Title Deed', beneficiary_id: 'alice.brown@email.com', status: 'stored', issued_at: '2025-03-20', digilocker_status: 'success' },
-  { credential_id: 'cred-005', schema_name: 'Professional License', beneficiary_id: 'charlie.davis@email.com', status: 'stored', issued_at: '2025-02-10', digilocker_status: 'not_pushed' },
-]
-
 export default function DocumentsPage() {
   const [docs, setDocs] = useState<ExtendedDocRow[]>(INITIAL_DOCS)
   const [searchQuery, setSearchQuery] = useState('')
