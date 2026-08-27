@@ -14,6 +14,7 @@ interface Tenant {
   storage_quota_bytes: number
   rate_limit_per_hour: number
   created_at: string
+  digilocker_enabled: boolean
 }
 
 /** Mirrors _VALID_TRANSITIONS in app/services/tenant_service.py. */
@@ -25,10 +26,10 @@ const VALID_TRANSITIONS: Record<TenantStatus, TenantStatus[]> = {
 }
 
 const INITIAL_TENANTS: Tenant[] = [
-  { id: '1', namespace: 'edu_board', name: 'State Education Board', domain: 'edu.gov.in', status: 'active', storage_quota_bytes: 10737418240, rate_limit_per_hour: 10000, created_at: '2025-01-15T10:00:00Z' },
-  { id: '2', namespace: 'health_dept', name: 'Health Department', domain: 'health.gov.in', status: 'pending', storage_quota_bytes: 5368709120, rate_limit_per_hour: 5000, created_at: '2025-03-20T14:30:00Z' },
-  { id: '3', namespace: 'land_registry', name: 'Land Registry Office', domain: 'land.gov.in', status: 'suspended', storage_quota_bytes: 10737418240, rate_limit_per_hour: 10000, created_at: '2024-11-05T09:00:00Z' },
-  { id: '4', namespace: 'transport', name: 'Transport Authority', domain: 'transport.gov.in', status: 'active', storage_quota_bytes: 21474836480, rate_limit_per_hour: 20000, created_at: '2024-08-12T11:00:00Z' },
+  { id: '1', namespace: 'edu_board', name: 'State Education Board', domain: 'edu.gov.in', status: 'active', storage_quota_bytes: 10737418240, rate_limit_per_hour: 10000, created_at: '2025-01-15T10:00:00Z', digilocker_enabled: true },
+  { id: '2', namespace: 'health_dept', name: 'Health Department', domain: 'health.gov.in', status: 'pending', storage_quota_bytes: 5368709120, rate_limit_per_hour: 5000, created_at: '2025-03-20T14:30:00Z', digilocker_enabled: false },
+  { id: '3', namespace: 'land_registry', name: 'Land Registry Office', domain: 'land.gov.in', status: 'suspended', storage_quota_bytes: 10737418240, rate_limit_per_hour: 10000, created_at: '2024-11-05T09:00:00Z', digilocker_enabled: true },
+  { id: '4', namespace: 'transport', name: 'Transport Authority', domain: 'transport.gov.in', status: 'active', storage_quota_bytes: 21474836480, rate_limit_per_hour: 20000, created_at: '2024-08-12T11:00:00Z', digilocker_enabled: false },
 ]
 
 const statusColors: Record<TenantStatus, string> = {
@@ -97,6 +98,7 @@ export default function TenantsPage() {
       storage_quota_bytes: 10 * 1024 ** 3,
       rate_limit_per_hour: 10000,
       created_at: new Date().toISOString(),
+      digilocker_enabled: false,
     }
     setTenants(prev => [tenant, ...prev])
     setForm(EMPTY_FORM)
@@ -223,6 +225,7 @@ export default function TenantsPage() {
             <tr>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Tenant</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">DigiLocker</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Quota</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Rate Limit</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -250,6 +253,32 @@ export default function TenantsPage() {
                   >
                     {tenant.status}
                   </span>
+                </td>
+                <td className="px-6 py-4">
+                  <button
+                    onClick={() => {
+                      setTenants(prev =>
+                        prev.map(t =>
+                          t.id === tenant.id
+                            ? { ...t, digilocker_enabled: !t.digilocker_enabled }
+                            : t,
+                        ),
+                      )
+                      notify(
+                        `DigiLocker ${!tenant.digilocker_enabled ? 'enabled' : 'disabled'} for ${tenant.name}`,
+                      )
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                      tenant.digilocker_enabled ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                    title={tenant.digilocker_enabled ? 'DigiLocker enabled — click to disable' : 'DigiLocker disabled — click to enable'}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                        tenant.digilocker_enabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">
                   {(tenant.storage_quota_bytes / 1024 ** 3).toFixed(0)} GB

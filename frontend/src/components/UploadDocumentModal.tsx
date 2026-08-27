@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { Upload } from 'lucide-react'
+import { Upload, Send } from 'lucide-react'
 import Modal from './Modal'
 import { SCHEMA_OPTIONS } from '@/lib/documents'
 
 interface Props {
   onClose: () => void
-  onSubmit: (schemaName: string, beneficiaryId: string) => void
+  onSubmit: (schemaName: string, beneficiaryId: string, pushToDigiLocker: boolean) => void
 }
 
 /** Single-document issuance form (mirrors POST /api/v1/documents). */
@@ -13,6 +13,7 @@ export default function UploadDocumentModal({ onClose, onSubmit }: Props) {
   const [schemaName, setSchemaName] = useState<string>(SCHEMA_OPTIONS[0])
   const [beneficiaryId, setBeneficiaryId] = useState('')
   const [content, setContent] = useState('')
+  const [pushToDigiLocker, setPushToDigiLocker] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -36,7 +37,7 @@ export default function UploadDocumentModal({ onClose, onSubmit }: Props) {
         return
       }
     }
-    onSubmit(schemaName, id)
+    onSubmit(schemaName, id, pushToDigiLocker)
   }
 
   return (
@@ -99,6 +100,23 @@ export default function UploadDocumentModal({ onClose, onSubmit }: Props) {
             placeholder={'{\n  "student_name": "John Doe",\n  "grade": "A"\n}'}
             className="w-full px-3 py-2.5 border border-gray-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none"
           />
+        </div>
+
+        <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <input
+            id="digilocker"
+            type="checkbox"
+            checked={pushToDigiLocker}
+            onChange={e => setPushToDigiLocker(e.target.checked)}
+            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          />
+          <label htmlFor="digilocker" className="flex items-center gap-2 text-sm text-blue-900 cursor-pointer select-none">
+            <Send size={14} className="text-blue-600" />
+            <span>
+              <strong>Push to DigiLocker</strong>
+              <span className="text-blue-700 ml-1">— auto-deliver to beneficiary's DigiLocker account</span>
+            </span>
+          </label>
         </div>
 
         {error && (
