@@ -98,6 +98,27 @@ services:
       redis:
         condition: service_healthy
 
+  # ---------- Frontend (Vite dev server with hot-reload) ----------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      # Bind-mount source for hot-reload...
+      - ./frontend:/app
+      # ...but keep the container's node_modules (installed for Linux).
+      - /app/node_modules
+    environment:
+      # Vite proxies /api to this target. Inside the compose network the API
+      # is reachable by its service name.
+      VITE_API_TARGET: http://api:8000
+      # Poll for file changes — reliable for bind mounts on Windows/WSL.
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      - api
+
   # ---------- Migrations ----------
   migrate:
     build:

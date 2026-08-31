@@ -88,13 +88,15 @@ def get_celery_app() -> Celery:
     return app
 
 
-# Module-level reference for Celery CLI: celery -A app.tasks.celery_app:celery_app
-# Only resolves when the worker actually starts (not at import time in tests).
-celery_app: Celery | None = None
-
-
 def init_celery() -> Celery:
     """Initialize and return the celery app. Called by worker entrypoint."""
-    global celery_app
-    celery_app = get_celery_app()
-    return celery_app
+    return get_celery_app()
+
+
+# Module-level Celery instance for the Celery CLI:
+#   celery -A app.tasks.celery_app:celery_app worker ...
+# Celery's CLI requires an actual Celery instance. This resolves the app when
+# the module is imported by the worker/beat process, where env vars are present.
+# Tests import individual task modules, not this attribute, so lazy validation
+# is preserved for the test suite.
+celery_app = get_celery_app()

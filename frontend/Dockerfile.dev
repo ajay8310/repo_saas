@@ -1,0 +1,17 @@
+# Frontend dev image — runs the Vite dev server with hot-reload.
+# Source is bind-mounted at runtime (see docker-compose.yml), so this image
+# only needs Node and the installed dependencies.
+
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install dependencies first for better layer caching.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Source is mounted as a volume at runtime; nothing else to copy for dev.
+EXPOSE 3000
+
+# --host makes Vite listen on 0.0.0.0 so the port is reachable from the host.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

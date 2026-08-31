@@ -35,10 +35,12 @@ target_metadata = None
 # Override the sqlalchemy.url with the value from the runtime config / env.
 _db_url = os.environ.get("DATABASE_URL", "")
 if _db_url:
-    # Alembic needs a synchronous DSN even when the app uses asyncpg.
-    # Replace the async driver prefix so Alembic can use psycopg2.
-    _sync_url = _db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-    config.set_main_option("sqlalchemy.url", _sync_url)
+    # This env.py runs migrations through an async engine
+    # (run_async_migrations), so keep the asyncpg driver. If a plain
+    # "postgresql://" DSN is supplied, normalise it to the async driver.
+    if _db_url.startswith("postgresql://"):
+        _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    config.set_main_option("sqlalchemy.url", _db_url)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,9 @@
+# Never copy the host's node_modules into the image — it's installed inside
+# the container (npm ci) and mounted over at runtime. Copying a Windows-built
+# node_modules into a Linux image corrupts native binaries (esbuild, rollup).
+node_modules
+dist
+dist-ssr
+.vite
+*.log
+.DS_Store
