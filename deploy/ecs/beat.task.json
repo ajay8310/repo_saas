@@ -1,0 +1,39 @@
+{
+  "family": "repo_saas_dev_beat",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_execution",
+  "taskRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_task",
+  "containerDefinitions": [
+    {
+      "name": "beat",
+      "image": "973759795388.dkr.ecr.ap-south-2.amazonaws.com/repo_saas_dev_backend:{{IMAGE_TAG}}",
+      "essential": true,
+      "command": ["celery", "-A", "app.tasks.celery_app:celery_app", "beat", "--loglevel=info"],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "development" },
+        { "name": "LOG_LEVEL", "value": "DEBUG" },
+        { "name": "AWS_REGION", "value": "ap-south-2" },
+        { "name": "S3_BUCKET_NAME", "value": "repo-saas-dev-documents" },
+        { "name": "PII_ENCRYPTION_ENABLED", "value": "false" },
+        { "name": "ANCHOR_PROVIDER", "value": "local" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/database-url" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/redis-url" },
+        { "name": "JWT_PRIVATE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/jwt-private-key" },
+        { "name": "JWT_PUBLIC_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/jwt-public-key" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/repo_saas_dev",
+          "awslogs-region": "ap-south-2",
+          "awslogs-stream-prefix": "beat"
+        }
+      }
+    }
+  ]
+}

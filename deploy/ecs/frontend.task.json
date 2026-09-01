@@ -1,0 +1,37 @@
+{
+  "family": "repo_saas_dev_frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_execution",
+  "taskRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_task",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "973759795388.dkr.ecr.ap-south-2.amazonaws.com/repo_saas_dev_frontend:{{IMAGE_TAG}}",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 80, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "API_UPSTREAM", "value": "http://repo-saas-dev-api.internal:8000" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/repo_saas_dev",
+          "awslogs-region": "ap-south-2",
+          "awslogs-stream-prefix": "frontend"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -qO- http://localhost:80/healthz || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      }
+    }
+  ]
+}

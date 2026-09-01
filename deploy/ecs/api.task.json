@@ -1,0 +1,49 @@
+{
+  "family": "repo_saas_dev_api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_execution",
+  "taskRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_task",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "973759795388.dkr.ecr.ap-south-2.amazonaws.com/repo_saas_dev_backend:{{IMAGE_TAG}}",
+      "essential": true,
+      "command": ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"],
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "development" },
+        { "name": "LOG_LEVEL", "value": "DEBUG" },
+        { "name": "AWS_REGION", "value": "ap-south-2" },
+        { "name": "S3_BUCKET_NAME", "value": "repo-saas-dev-documents" },
+        { "name": "PII_ENCRYPTION_ENABLED", "value": "false" },
+        { "name": "ANCHOR_PROVIDER", "value": "local" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/database-url" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/redis-url" },
+        { "name": "JWT_PRIVATE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/jwt-private-key" },
+        { "name": "JWT_PUBLIC_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/jwt-public-key" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/repo_saas_dev",
+          "awslogs-region": "ap-south-2",
+          "awslogs-stream-prefix": "api"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

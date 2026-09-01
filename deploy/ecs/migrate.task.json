@@ -1,0 +1,32 @@
+{
+  "family": "repo_saas_dev_migrate",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_execution",
+  "taskRoleArn": "arn:aws:iam::973759795388:role/repo_saas_dev_ecs_task",
+  "containerDefinitions": [
+    {
+      "name": "migrate",
+      "image": "973759795388.dkr.ecr.ap-south-2.amazonaws.com/repo_saas_dev_backend:{{IMAGE_TAG}}",
+      "essential": true,
+      "command": ["alembic", "upgrade", "head"],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "development" },
+        { "name": "AWS_REGION", "value": "ap-south-2" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-south-2:973759795388:secret:/dev/repo_saas/database-url" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/repo_saas_dev",
+          "awslogs-region": "ap-south-2",
+          "awslogs-stream-prefix": "migrate"
+        }
+      }
+    }
+  ]
+}
