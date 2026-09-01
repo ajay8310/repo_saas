@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Migration Reminder on Model Change",
+      "trigger": "PostFileSave",
+      "description": "Reminds to create/verify an Alembic migration when a SQLAlchemy model is changed.",
+      "matcher": "app[\\\\/]models[\\\\/].*\\.py$",
+      "action": {
+        "type": "agent",
+        "prompt": "A SQLAlchemy model file was just changed. Check whether this change alters the database schema (new/removed/renamed columns, tables, constraints, or indexes). If it does, remind the user that a matching Alembic migration is required in alembic/versions/ following the project's numbered naming convention, and that new tenant-scoped tables must call the RLS helper (_apply_rls). If the change is cosmetic (docstrings, comments, type-only hints with no column impact), state that no migration is needed."
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Run Unit and Property Tests After Task",
+      "trigger": "PostTaskExec",
+      "description": "Runs the fast unit and property test suites inside the api container after a spec task is completed.",
+      "action": {
+        "type": "command",
+        "command": "docker compose exec -T api python -m pytest tests/unit tests/property -q --no-header -p no:cacheprovider",
+        "timeout": 300
+      }
+    }
+  ]
+}

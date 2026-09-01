@@ -14,6 +14,18 @@ RUN pip install --no-cache-dir -e "." && pip cache purge
 COPY . .
 
 # ---------------------------------------------------------------------------
+# Dev image — includes dev tooling (ruff, pytest, mypy) for hooks and local
+# workflows. Used by the api/worker services in docker-compose for development.
+# ---------------------------------------------------------------------------
+FROM base AS dev
+
+RUN pip install --no-cache-dir -e ".[dev]" && pip cache purge
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# ---------------------------------------------------------------------------
 # Production image
 # ---------------------------------------------------------------------------
 FROM base AS production

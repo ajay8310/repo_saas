@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Lint Frontend on Save",
+      "trigger": "PostFileSave",
+      "description": "Runs ESLint inside the running frontend container when a TypeScript/TSX file is saved.",
+      "matcher": "frontend[\\\\/]src[\\\\/].*\\.(ts|tsx)$",
+      "action": {
+        "type": "command",
+        "command": "docker exec frontend npm run lint",
+        "timeout": 120
+      }
+    }
+  ]
+}

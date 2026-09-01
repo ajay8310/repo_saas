@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Guard Sensitive File Writes",
+      "trigger": "PreToolUse",
+      "description": "Prompts for confirmation before the agent writes to secret-bearing files like .env or credential stores.",
+      "matcher": "fs_write|str_replace|fs_append",
+      "action": {
+        "type": "command",
+        "command": "$in = [Console]::In.ReadToEnd(); if ($in -match '\\.env(\\b|[\"'']|\\\\|/|$)' -or $in -match 'credentials' -or $in -match 'private\\.pem' -or $in -match 'secret') { Write-Output '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"This write targets a file that may contain secrets (.env, credentials, private keys). Confirm before proceeding.\"}}' }; exit 0"
+      }
+    }
+  ]
+}

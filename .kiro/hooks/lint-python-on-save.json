@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Lint Python on Save",
+      "trigger": "PostFileSave",
+      "description": "Runs ruff auto-fix and formatting inside the api container whenever a backend Python file is saved.",
+      "matcher": "app[\\\\/].*\\.py$|tests[\\\\/].*\\.py$|alembic[\\\\/].*\\.py$",
+      "action": {
+        "type": "command",
+        "command": "docker compose exec -T api sh -c \"ruff check --fix app tests alembic && ruff format app tests alembic\"",
+        "timeout": 120
+      }
+    }
+  ]
+}

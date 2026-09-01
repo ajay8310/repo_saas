@@ -47,7 +47,7 @@ services:
   api:
     build:
       context: .
-      target: production
+      target: dev
     ports:
       - "8000:8000"
     env_file: .env
@@ -60,6 +60,12 @@ services:
       SNS_ENDPOINT_URL: http://localstack:4566
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
+    volumes:
+      # Mount source for a live-reload dev workflow: lint fixes and tests run
+      # by hooks operate on host files, not a stale image copy.
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./alembic:/app/alembic
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,6 +86,12 @@ services:
       KMS_ENDPOINT_URL: http://localstack:4566
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./alembic:/app/alembic
+      # NOTE: worker keeps its runtime target; the api container (dev target)
+      # provides ruff/pytest for the lint and test hooks.
     depends_on:
       postgres:
         condition: service_healthy
