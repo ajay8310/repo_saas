@@ -5,8 +5,6 @@
 .kiro
 .venv
 venv
-.env
-.env.*
 *.pem
 .hypothesis
 .pytest_cache
