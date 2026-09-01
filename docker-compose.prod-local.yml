@@ -1,0 +1,123 @@
+# =============================================================================
+# Production-parity local stack.
+#
+# This mirrors the ECS deployment as closely as possible on your machine:
+#   - Backend image built from deploy/backend/Dockerfile, run four ways
+#     (api / worker / beat / migrate) via different commands — same as ECS.
+#   - Frontend image built from deploy/frontend/Dockerfile (Vite build + Nginx),
+#     serving static files and proxying /api to the backend — same as ECS.
+#
+# It does NOT use hot-reload or dev servers; it runs the exact images you will
+# push to ECR. Use this to validate the deploy/ Dockerfiles before AWS.
+#
+# Usage:
+#   docker compose -f docker-compose.prod-local.yml --profile migrate run --rm migrate
+#   docker compose -f docker-compose.prod-local.yml up -d
+#   open http://localhost:8080          (frontend via Nginx)
+#   open http://localhost:8080/api/v1/docs   (API proxied through Nginx)
+# =============================================================================
+
+services:
+  # ---------- Backing services (same as dev) ----------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: reposaaas
+      POSTGRES_PASSWORD: reposaaas
+      POSTGRES_DB: reposaaas
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reposaaas"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:3
+    environment:
+      SERVICES: s3,kms,ses,sns
+      DEFAULT_REGION: ap-south-1
+
+  # ---------- Backend image, run as the API ----------
+  api:
+    image: repo-saas-backend:local
+    build:
+      context: .
+      dockerfile: deploy/backend/Dockerfile
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reposaaas:reposaaas@postgres:5432/reposaaas
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://localstack:4566
+      KMS_ENDPOINT_URL: http://localstack:4566
+      SES_ENDPOINT_URL: http://localstack:4566
+      SNS_ENDPOINT_URL: http://localstack:4566
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  # ---------- Same backend image, run as the Celery worker ----------
+  worker:
+    image: repo-saas-backend:local
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reposaaas:reposaaas@postgres:5432/reposaaas
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://localstack:4566
+      KMS_ENDPOINT_URL: http://localstack:4566
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - api
+
+  # ---------- Same backend image, run as Celery beat ----------
+  beat:
+    image: repo-saas-backend:local
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "beat", "--loglevel=info"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reposaaas:reposaaas@postgres:5432/reposaaas
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+    depends_on:
+      - api
+
+  # ---------- Frontend production image (Nginx) ----------
+  # Serves the built static bundle and proxies /api to the API container,
+  # exactly like the ECS frontend proxies to the internal API ALB.
+  frontend:
+    image: repo-saas-frontend:local
+    build:
+      context: .
+      dockerfile: deploy/frontend/Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      API_UPSTREAM: http://api:8000
+    depends_on:
+      - api
+
+  # ---------- Migrations (same backend image, run once) ----------
+  migrate:
+    image: repo-saas-backend:local
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reposaaas:reposaaas@postgres:5432/reposaaas
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - migrate
