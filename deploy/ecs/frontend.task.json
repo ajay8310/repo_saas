@@ -15,7 +15,7 @@
         { "containerPort": 80, "protocol": "tcp" }
       ],
       "environment": [
-        { "name": "API_UPSTREAM", "value": "http://repo-saas-dev-api.internal:8000" }
+        { "name": "API_UPSTREAM", "value": "http://internal-repo-saas-dev-alb.ap-south-2.elb.amazonaws.com" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

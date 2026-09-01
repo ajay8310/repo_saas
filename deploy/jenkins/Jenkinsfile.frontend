@@ -1,0 +1,85 @@
+// =============================================================================
+// Frontend service pipeline.
+// Builds the frontend image (Vite build + Nginx), pushes to ECR, deploys the
+// frontend ECS service (behind the ALB on :80). Nginx proxies /api to the
+// internal ALB (set via API_UPSTREAM on the frontend task definition).
+// =============================================================================
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'BRANCH', defaultValue: 'develop', description: 'Branch to build')
+    }
+
+    environment {
+        GIT_URL = 'https://openforge.gov.in/plugins/git/naddl/repo_saas.git'
+        JENKINS_CREDENTIALS_ID = "bce92955-0760-423f-b323-64f6ff2dcda7"
+        AWS_ACCOUNT_ID = "973759795388"
+        AWS_DEFAULT_REGION = "ap-south-2"
+
+        FRONTEND_REPO_NAME = "repo_saas_dev_frontend"
+        REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+        FRONTEND_URI = "${REGISTRY}/${FRONTEND_REPO_NAME}"
+        TAG_NAME = "dev"
+
+        ECS_CLUSTER = "dev-nad"
+        FRONTEND_SERVICE = "repo_saas_dev_frontend"
+        FRONTEND_TASK = "repo_saas_dev_frontend"
+    }
+
+    stages {
+        stage('Clone Git') {
+            steps {
+                checkout([$class: 'GitSCM',
+                    branches: [[name: "*/${params.BRANCH}"]],
+                    extensions: [],
+                    userRemoteConfigs: [[credentialsId: "${JENKINS_CREDENTIALS_ID}", url: "${GIT_URL}"]]
+                ])
+            }
+        }
+
+        stage('Login to AWS ECR') {
+            steps {
+                sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${REGISTRY}"
+            }
+        }
+
+        stage('Build & Push Frontend Image') {
+            steps {
+                sh """
+                    docker build -f deploy/frontend/Dockerfile -t ${FRONTEND_URI}:${TAG_NAME} .
+                    docker push ${FRONTEND_URI}:${TAG_NAME}
+                    docker rmi ${FRONTEND_URI}:${TAG_NAME}
+                """
+            }
+        }
+
+        stage('Deploy Frontend Service') {
+            steps {
+                sh """
+                    aws ecs update-service \
+                        --region ${AWS_DEFAULT_REGION} \
+                        --cluster ${ECS_CLUSTER} \
+                        --service ${FRONTEND_SERVICE} \
+                        --task-definition ${FRONTEND_TASK} \
+                        --force-new-deployment
+
+                    aws ecs wait services-stable \
+                        --cluster ${ECS_CLUSTER} \
+                        --services ${FRONTEND_SERVICE} \
+                        --region ${AWS_DEFAULT_REGION}
+                """
+            }
+        }
+
+        stage('Clean Workspace') {
+            steps { deleteDir() }
+        }
+    }
+
+    post {
+        always { echo 'Pipeline completed. Cleaning workspace...'; cleanWs() }
+        failure { echo 'Frontend pipeline failed!' }
+        success { echo 'Frontend pipeline completed successfully!' }
+    }
+}

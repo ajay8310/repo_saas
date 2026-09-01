@@ -21,9 +21,14 @@ deploy/
 │   ├── beat.task.json      # celery beat, no LB, exactly 1 task
 │   ├── migrate.task.json   # one-off alembic upgrade
 │   └── frontend.task.json  # nginx, behind ALB on :80
-└── env/
-    ├── backend.env.example
-    └── frontend.env.example
+├── env/
+│   ├── backend.env.example
+│   └── frontend.env.example
+└── jenkins/
+    ├── Jenkinsfile.api       # build backend + migrate + deploy api
+    ├── Jenkinsfile.worker    # build backend + deploy worker
+    ├── Jenkinsfile.beat      # build backend + deploy beat
+    └── Jenkinsfile.frontend  # build frontend + deploy frontend
 ```
 
 ## Images and ECR repositories
@@ -64,23 +69,66 @@ docker build -f deploy/frontend/Dockerfile \
   -t <acct>.dkr.ecr.ap-south-2.amazonaws.com/repo_saas_dev_frontend:<tag> .
 ```
 
-## Deploy flow (per push)
+## Jenkins pipelines (one per service)
 
-1. Build + push both images to their ECR repos (tag = git SHA).
-2. Register the updated task definitions (substitute `{{IMAGE_TAG}}`).
-3. Run the migrate task once (`aws ecs run-task`), wait for exit code 0.
-4. Update the api, worker, beat, frontend services with `--force-new-deployment`.
-5. Wait for the api + frontend services to reach steady state.
+Each service has its own Jenkinsfile in `deploy/jenkins/`, so any service can
+be built and deployed independently. Create one Jenkins Pipeline job per file,
+pointing "Script Path" at the file below.
 
-See the `Jenkinsfile` at the repo root for the automated pipeline.
+| Service | Jenkinsfile | What it does |
+|---------|-------------|--------------|
+| API | `deploy/jenkins/Jenkinsfile.api` | build backend image → push → **run migrations** → deploy api |
+| Worker | `deploy/jenkins/Jenkinsfile.worker` | build backend image → push → deploy worker |
+| Beat | `deploy/jenkins/Jenkinsfile.beat` | build backend image → push → deploy beat |
+| Frontend | `deploy/jenkins/Jenkinsfile.frontend` | build frontend image → push → deploy frontend |
+
+Notes:
+- The **API pipeline owns migrations** (runs `alembic upgrade head` as a
+  one-off task before deploying). Worker/beat pipelines skip migrations to
+  avoid racing.
+- All three backend pipelines build+push the same `repo_saas_dev_backend`
+  image. Deploy the API first when schema changes are involved, then worker/beat.
+- Each pipeline ends by waiting for its service to reach steady state.
+
+## ALB architecture
+
+Everything routes through Application Load Balancers.
+
+```
+                 Internet
+                    │
+          ┌─────────▼──────────┐
+          │  Public ALB        │  :443 / :80
+          │  (frontend)        │
+          └─────────┬──────────┘
+                    │  → repo_saas_dev_frontend target group (:80, nginx)
+                    │
+   Nginx proxies /api/*  ──────────────┐
+                                        ▼
+                          ┌─────────────────────────┐
+                          │  Internal ALB            │  :80
+                          │  (api)                   │
+                          └────────────┬─────────────┘
+                                       │ → repo_saas_dev_api target group (:8000)
+```
+
+- **Frontend** sits behind a public ALB (443/80 → container :80).
+- **API** sits behind an internal ALB (:80 → container :8000).
+- **Worker** and **Beat** have no ALB — they only talk to Redis/DB.
 
 ## How the frontend reaches the backend
 
-The React app calls `/api/v1/...` (relative). In production the Nginx image
-proxies `/api/` to the backend API, controlled by the `API_UPSTREAM` env var
-on the frontend task (default `http://repo-saas-dev-api.internal:8000`). Set it
-to your API service's internal address — ECS Service Connect / Cloud Map DNS,
-or an internal ALB.
+The React app calls `/api/v1/...` (relative). The Nginx image proxies `/api/`
+to the internal API ALB, controlled by the `API_UPSTREAM` env var on the
+frontend task definition:
+
+```
+API_UPSTREAM=http://internal-repo-saas-dev-alb.ap-south-2.elb.amazonaws.com
+```
+
+Set it to your **internal API ALB's DNS name**. Because the frontend proxies
+through Nginx, the browser only ever talks to the public frontend ALB — the API
+ALB stays internal.
 
 ## Environment / secrets
 

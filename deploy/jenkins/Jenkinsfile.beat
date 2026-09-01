@@ -1,0 +1,84 @@
+// =============================================================================
+// Beat (Celery scheduler) service pipeline.
+// Builds the shared backend image, pushes to ECR, deploys ONLY the beat
+// service. No load balancer. Beat must run at desired-count = 1.
+// =============================================================================
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'BRANCH', defaultValue: 'develop', description: 'Branch to build')
+    }
+
+    environment {
+        GIT_URL = 'https://openforge.gov.in/plugins/git/naddl/repo_saas.git'
+        JENKINS_CREDENTIALS_ID = "bce92955-0760-423f-b323-64f6ff2dcda7"
+        AWS_ACCOUNT_ID = "973759795388"
+        AWS_DEFAULT_REGION = "ap-south-2"
+
+        BACKEND_REPO_NAME = "repo_saas_dev_backend"
+        REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+        BACKEND_URI = "${REGISTRY}/${BACKEND_REPO_NAME}"
+        TAG_NAME = "dev"
+
+        ECS_CLUSTER = "dev-nad"
+        BEAT_SERVICE = "repo_saas_dev_beat"
+        BEAT_TASK = "repo_saas_dev_beat"
+    }
+
+    stages {
+        stage('Clone Git') {
+            steps {
+                checkout([$class: 'GitSCM',
+                    branches: [[name: "*/${params.BRANCH}"]],
+                    extensions: [],
+                    userRemoteConfigs: [[credentialsId: "${JENKINS_CREDENTIALS_ID}", url: "${GIT_URL}"]]
+                ])
+            }
+        }
+
+        stage('Login to AWS ECR') {
+            steps {
+                sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${REGISTRY}"
+            }
+        }
+
+        stage('Build & Push Backend Image') {
+            steps {
+                sh """
+                    docker build -f deploy/backend/Dockerfile -t ${BACKEND_URI}:${TAG_NAME} .
+                    docker push ${BACKEND_URI}:${TAG_NAME}
+                    docker rmi ${BACKEND_URI}:${TAG_NAME}
+                """
+            }
+        }
+
+        stage('Deploy Beat Service') {
+            steps {
+                sh """
+                    aws ecs update-service \
+                        --region ${AWS_DEFAULT_REGION} \
+                        --cluster ${ECS_CLUSTER} \
+                        --service ${BEAT_SERVICE} \
+                        --task-definition ${BEAT_TASK} \
+                        --force-new-deployment
+
+                    aws ecs wait services-stable \
+                        --cluster ${ECS_CLUSTER} \
+                        --services ${BEAT_SERVICE} \
+                        --region ${AWS_DEFAULT_REGION}
+                """
+            }
+        }
+
+        stage('Clean Workspace') {
+            steps { deleteDir() }
+        }
+    }
+
+    post {
+        always { echo 'Pipeline completed. Cleaning workspace...'; cleanWs() }
+        failure { echo 'Beat pipeline failed!' }
+        success { echo 'Beat pipeline completed successfully!' }
+    }
+}
