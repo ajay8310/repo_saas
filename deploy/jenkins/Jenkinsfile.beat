@@ -46,7 +46,7 @@ pipeline {
         stage('Build & Push Backend Image') {
             steps {
                 sh """
-                    docker build -f deploy/backend/Dockerfile -t ${BACKEND_URI}:${TAG_NAME} .
+                    docker build -f Dockerfile.backend -t ${BACKEND_URI}:${TAG_NAME} .
                     docker push ${BACKEND_URI}:${TAG_NAME}
                     docker rmi ${BACKEND_URI}:${TAG_NAME}
                 """

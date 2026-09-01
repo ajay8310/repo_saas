@@ -47,7 +47,7 @@ pipeline {
         stage('Build & Push Frontend Image') {
             steps {
                 sh """
-                    docker build -f deploy/frontend/Dockerfile -t ${FRONTEND_URI}:${TAG_NAME} .
+                    docker build -f Dockerfile.frontend -t ${FRONTEND_URI}:${TAG_NAME} .
                     docker push ${FRONTEND_URI}:${TAG_NAME}
                     docker rmi ${FRONTEND_URI}:${TAG_NAME}
                 """

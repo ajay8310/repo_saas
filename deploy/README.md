@@ -6,15 +6,17 @@ deploy them independently.
 
 ## Layout
 
+The two Dockerfiles live at the **repo root** (build context = repo root):
+
 ```
+Dockerfile.backend               # one image for api + worker + beat + migrate
+Dockerfile.backend.dockerignore
+Dockerfile.frontend              # build (Vite) + serve (Nginx), proxies /api
+Dockerfile.frontend.dockerignore
+
 deploy/
-├── backend/
-│   ├── Dockerfile          # one image for api + worker + beat + migrate
-│   └── .dockerignore
 ├── frontend/
-│   ├── Dockerfile          # build (Vite) + serve (Nginx), proxies /api
-│   ├── nginx.conf
-│   └── .dockerignore
+│   └── nginx.conf          # baked into the frontend image
 ├── ecs/
 │   ├── api.task.json       # uvicorn, behind ALB on :8000
 │   ├── worker.task.json    # celery worker, no LB
@@ -40,7 +42,16 @@ deploy/
 
 The backend uses **one image** across four ECS task definitions — each just
 overrides the container `command`. This keeps builds simple: build once, run
-everywhere.
+everywhere. The worker/beat/migrate services have **no separate Dockerfile**;
+their commands live in `deploy/ecs/worker.task.json`, `beat.task.json`, and
+`migrate.task.json` respectively:
+
+| Service | Command (set in task def) |
+|---------|---------------------------|
+| api | `uvicorn app.main:app ...` (image default) |
+| worker | `celery -A app.tasks.celery_app:celery_app worker ...` |
+| beat | `celery -A app.tasks.celery_app:celery_app beat ...` |
+| migrate | `alembic upgrade head` |
 
 ## ECS services
 
@@ -61,11 +72,11 @@ Run from the repo root.
 
 ```bash
 # Backend (context = repo root)
-docker build -f deploy/backend/Dockerfile \
+docker build -f Dockerfile.backend \
   -t <acct>.dkr.ecr.ap-south-2.amazonaws.com/repo_saas_dev_backend:<tag> .
 
 # Frontend (context = repo root; Dockerfile copies from frontend/)
-docker build -f deploy/frontend/Dockerfile \
+docker build -f Dockerfile.frontend \
   -t <acct>.dkr.ecr.ap-south-2.amazonaws.com/repo_saas_dev_frontend:<tag> .
 ```
 

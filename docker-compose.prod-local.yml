@@ -2,9 +2,9 @@
 # Production-parity local stack.
 #
 # This mirrors the ECS deployment as closely as possible on your machine:
-#   - Backend image built from deploy/backend/Dockerfile, run four ways
+#   - Backend image built from Dockerfile.backend, run four ways
 #     (api / worker / beat / migrate) via different commands — same as ECS.
-#   - Frontend image built from deploy/frontend/Dockerfile (Vite build + Nginx),
+#   - Frontend image built from Dockerfile.frontend (Vite build + Nginx),
 #     serving static files and proxying /api to the backend — same as ECS.
 #
 # It does NOT use hot-reload or dev servers; it runs the exact images you will
@@ -50,7 +50,7 @@ services:
     image: repo-saas-backend:local
     build:
       context: .
-      dockerfile: deploy/backend/Dockerfile
+      dockerfile: Dockerfile.backend
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     env_file: .env
     environment:
@@ -102,7 +102,7 @@ services:
     image: repo-saas-frontend:local
     build:
       context: .
-      dockerfile: deploy/frontend/Dockerfile
+      dockerfile: Dockerfile.frontend
     ports:
       - "8080:80"
     environment:
