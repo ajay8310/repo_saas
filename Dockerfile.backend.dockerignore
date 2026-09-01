@@ -1,0 +1,29 @@
+# Build context is the repo root. Exclude everything not needed by the backend
+# image to keep the context small and builds fast.
+.git
+.github
+.kiro
+.venv
+venv
+*.pem
+.hypothesis
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
+tests
+frontend
+deploy
+docs
+docker-compose.yml
+docker-compose.prod-local.yml
+Dockerfile
+Dockerfile.frontend
+scripts
+test-results.txt
+run_tests.py
