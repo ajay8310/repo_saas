@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -e "." && pip cache purge
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
+COPY repo_saas/.env .env
 
 EXPOSE 8000
 
