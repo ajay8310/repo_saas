@@ -10,7 +10,6 @@ import hashlib
 import os
 import secrets
 from base64 import urlsafe_b64encode
-from datetime import datetime, timedelta, timezone
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
@@ -19,13 +18,15 @@ os.environ.setdefault("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nPLACE
 os.environ.setdefault("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nPLACEHOLDER\n-----END PUBLIC KEY-----")
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
-from hypothesis import given, settings as h_settings
+from hypothesis import given
+from hypothesis import settings as h_settings
 from hypothesis import strategies as st
 
 from app.config import Settings
-from tests.property.strategies import verification_expiry_hours, consented_field_lists
+from tests.property.strategies import consented_field_lists, verification_expiry_hours
 
 
 class TestProperty17:
@@ -153,8 +154,9 @@ class TestProperty25:
     """
 
     def test_already_revoked_raises(self) -> None:
-        from app.services.document_service import DocumentAlreadyRevokedError
         from uuid import uuid4
+
+        from app.services.document_service import DocumentAlreadyRevokedError
         with __import__("pytest").raises(DocumentAlreadyRevokedError):
             raise DocumentAlreadyRevokedError(uuid4())
 

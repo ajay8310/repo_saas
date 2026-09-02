@@ -7,14 +7,13 @@ the same connection string used at runtime drives migrations too.
 
 from __future__ import annotations
 
-import asyncio
 import os
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from alembic import context
 
 # Import metadata from the ORM models so Alembic can auto-generate migrations.
 # The import will be populated as models are added in task 1.3.

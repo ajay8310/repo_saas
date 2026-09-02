@@ -62,6 +62,17 @@ dev = [
     "mypy==1.10.0",
 ]
 
+# MCP server extra. Kept separate from core dependencies because the mcp SDK
+# requires newer pydantic/starlette than the platform pins. Install into its
+# own environment: `pip install -e ".[mcp]"`. The core API is unaffected.
+mcp = [
+    "mcp>=1.2,<2",
+]
+
+[project.scripts]
+# Run the platform MCP server over stdio: `repo-saas-mcp`
+repo-saas-mcp = "app.mcp.server:run"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]

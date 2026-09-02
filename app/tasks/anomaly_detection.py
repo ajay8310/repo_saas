@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from celery import shared_task
 
@@ -101,7 +101,7 @@ async def _sweep_async() -> list[dict]:
                         "count": count,
                         "threshold": threshold,
                         "window_minutes": window,
-                        "detected_at": datetime.now(timezone.utc).isoformat(),
+                        "detected_at": datetime.now(UTC).isoformat(),
                     })
 
         if cursor == 0:

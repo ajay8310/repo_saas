@@ -6,12 +6,10 @@ Requirement 14.4: 10,000 records processed within 30 minutes.
 
 from __future__ import annotations
 
-import json
 import time
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient
 
 

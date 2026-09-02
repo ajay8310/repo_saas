@@ -1,0 +1,9 @@
+﻿  64 |     
+  65 | >>> RUN pip install --no-cache-dir -e ".[mcp]" && pip cache purge
+  66 |     
+  67 |     # Point service clients at the compose network hostnames by 
+default. These can
+--------------------
+ERROR: failed to build: failed to solve: process "/bin/sh -c pip install 
+--no-cache-dir -e \".[mcp]\" && pip cache purge" did not complete 
+successfully: exit code: 1

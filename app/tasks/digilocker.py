@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC
 
 from celery import shared_task
 
@@ -39,9 +40,9 @@ def attempt_digilocker_push(self, push_id: str) -> bool:  # noqa: ARG001
 async def _attempt_async(push_id: str) -> bool:
     from uuid import UUID
 
+    from app.config import get_settings
     from app.db.session import AsyncSessionLocal
     from app.services.digilocker_connector import DigiLockerConnector
-    from app.config import get_settings
 
     async with AsyncSessionLocal() as db:
         connector = DigiLockerConnector(db=db, settings=get_settings())
@@ -55,7 +56,7 @@ def sweep_digilocker_retries() -> dict:
 
 
 async def _sweep_async() -> dict:
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from sqlalchemy import select
 
@@ -67,7 +68,7 @@ async def _sweep_async() -> dict:
     settings = get_settings()
     # Respect the configured minimum gap between attempts so a permanently
     # broken endpoint is not hammered once per sweep.
-    cutoff = datetime.now(timezone.utc) - timedelta(
+    cutoff = datetime.now(UTC) - timedelta(
         seconds=settings.digilocker_retry_interval_seconds
     )
 

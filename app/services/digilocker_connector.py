@@ -9,7 +9,7 @@ Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -70,7 +70,7 @@ class DigiLockerConnector:
             return False
 
         push.attempt_count += 1
-        push.last_attempt_at = datetime.now(timezone.utc)
+        push.last_attempt_at = datetime.now(UTC)
 
         try:
             # In production: OAuth2 auth + actual DigiLocker API call

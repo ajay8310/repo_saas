@@ -6,15 +6,10 @@ Requirement 9.3: Search p95 < 3 seconds with 10k documents.
 
 from __future__ import annotations
 
-import statistics
 import time
-from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.integration

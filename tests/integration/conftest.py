@@ -54,10 +54,12 @@ os.environ["JWT_PRIVATE_KEY"] = _PRIV_PEM
 os.environ["JWT_PUBLIC_KEY"] = _PUB_PEM
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
 import asyncio
-from typing import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator
+from datetime import UTC
 from uuid import uuid4
 
 import boto3
@@ -268,11 +270,12 @@ def kms_key_arn(kms_client) -> str:
 @pytest.fixture
 def auth_headers(settings) -> dict[str, str]:
     """Generate a valid JWT bearer token for a test tenant."""
+    from datetime import datetime, timedelta
+
     from jose import jwt as jose_jwt
-    from datetime import datetime, timedelta, timezone
 
     tenant_id = str(uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     claims = {
         "sub": "test_client",
         "tenant_id": tenant_id,
@@ -292,11 +295,12 @@ def make_auth_headers(settings):
     """Factory for generating auth headers with specific tenant/role."""
 
     def _make(tenant_id: str | None = None, roles: list[str] | None = None) -> dict[str, str]:
+        from datetime import datetime, timedelta
+
         from jose import jwt as jose_jwt
-        from datetime import datetime, timedelta, timezone
 
         tid = tenant_id or str(uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claims = {
             "sub": "test_client",
             "tenant_id": tid,

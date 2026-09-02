@@ -16,7 +16,7 @@ import logging
 import secrets
 import string
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -364,7 +364,7 @@ class TenantService:
         if current_client:
             # Move current key to grace period
             current_client.status = "grace_period"
-            current_client.grace_until = datetime.now(timezone.utc) + timedelta(
+            current_client.grace_until = datetime.now(UTC) + timedelta(
                 hours=grace_hours
             )
 
@@ -381,7 +381,7 @@ class TenantService:
         )
         self.db.add(new_api_client)
 
-        grace_until = datetime.now(timezone.utc) + timedelta(hours=grace_hours)
+        grace_until = datetime.now(UTC) + timedelta(hours=grace_hours)
         await self.db.commit()
 
         logger.info(

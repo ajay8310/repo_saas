@@ -88,13 +88,22 @@ def get_celery_app() -> Celery:
     return app
 
 
-# Module-level reference for Celery CLI: celery -A app.tasks.celery_app:celery_app
-# Only resolves when the worker actually starts (not at import time in tests).
-celery_app: Celery | None = None
-
-
 def init_celery() -> Celery:
     """Initialize and return the celery app. Called by worker entrypoint."""
-    global celery_app
-    celery_app = get_celery_app()
-    return celery_app
+    return get_celery_app()
+
+
+# Module-level Celery instance for the CLI: `celery -A app.tasks.celery_app`.
+# Celery's --app resolution looks for a module attribute named `app`, `celery`,
+# or `celery_app`. We resolve it eagerly here so the worker/beat entrypoints
+# find a real Celery instance (not a factory function).
+#
+# Import-time Settings resolution is acceptable in the worker/beat process,
+# which always has env vars. Tests import the *tasks* modules, not this app
+# object directly, and get_celery_app() is lru_cached so repeated access is
+# cheap. If Settings are missing (e.g. a bare unit-test import), fall back to
+# None so the import doesn't hard-fail.
+try:
+    celery_app: Celery | None = get_celery_app()
+except Exception:  # pragma: no cover - defensive: missing env in some contexts
+    celery_app = None

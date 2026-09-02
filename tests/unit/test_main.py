@@ -11,13 +11,13 @@ Requirements covered: 8.1 (versioned REST API), 14.1 (concurrent requests / basi
 
 from __future__ import annotations
 
-import pytest
-from fastapi.testclient import TestClient
-
 # ---- test env setup --------------------------------------------------------
 # Override required env vars before importing app.main so that Settings
 # validation does not fail in environments without a real .env file.
 import os
+
+import pytest
+from fastapi.testclient import TestClient
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
@@ -42,10 +42,10 @@ os.environ.setdefault(
 
 # Clear settings cache so our env overrides take effect.
 from app.config import get_settings
+
 get_settings.cache_clear()
 
 from app.main import create_app  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

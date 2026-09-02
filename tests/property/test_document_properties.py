@@ -15,17 +15,18 @@ os.environ.setdefault("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nPLACE
 os.environ.setdefault("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nPLACEHOLDER\n-----END PUBLIC KEY-----")
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
 from uuid import uuid4
 
 import pytest
-from hypothesis import given, settings as h_settings
+from hypothesis import given
+from hypothesis import settings as h_settings
 from hypothesis import strategies as st
 
 from app.config import Settings
 from app.services.document_service import DocumentValidationError
-from tests.property.strategies import beneficiary_ids, document_content
 
 
 class TestProperty10:

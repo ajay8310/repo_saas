@@ -16,14 +16,15 @@ os.environ.setdefault("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nPLACE
 os.environ.setdefault("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nPLACEHOLDER\n-----END PUBLIC KEY-----")
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
-import pytest
-from hypothesis import given, settings as h_settings
+from hypothesis import given
+from hypothesis import settings as h_settings
 from hypothesis import strategies as st
 
-from app.services.search_service import InvalidDateRangeError, SearchParams
-from tests.property.strategies import sort_orders, page_sizes
+from app.services.search_service import SearchParams
+from tests.property.strategies import sort_orders
 
 
 class TestProperty34:
@@ -39,7 +40,7 @@ class TestProperty34:
     @h_settings(max_examples=50)
     def test_invalid_range_detected(self, after_days: int, before_days: int) -> None:
         """When after > before, InvalidDateRangeError should be raised."""
-        from datetime import date, timedelta
+        from datetime import timedelta
 
         base = date(2025, 1, 1)
         after = base + timedelta(days=after_days)

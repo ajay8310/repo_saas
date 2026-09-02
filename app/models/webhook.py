@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
@@ -32,7 +32,7 @@ class Webhook(Base, UUIDPrimaryKeyMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    events: Mapped[list["WebhookEvent"]] = relationship(back_populates="webhook")
+    events: Mapped[list[WebhookEvent]] = relationship(back_populates="webhook")
 
 
 class WebhookEvent(Base, UUIDPrimaryKeyMixin):
@@ -55,4 +55,4 @@ class WebhookEvent(Base, UUIDPrimaryKeyMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    webhook: Mapped["Webhook"] = relationship(back_populates="events")
+    webhook: Mapped[Webhook] = relationship(back_populates="events")

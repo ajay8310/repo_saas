@@ -10,11 +10,10 @@ Usage in service layer:
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from functools import lru_cache
-from typing import AsyncGenerator
 
 import redis.asyncio as aioredis
-
 
 # ---------------------------------------------------------------------------
 # Lazy pool initialization (avoids import-time Settings resolution)

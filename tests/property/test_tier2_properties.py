@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
@@ -21,14 +21,13 @@ os.environ.setdefault("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nPLACE
 os.environ.setdefault("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nPLACEHOLDER\n-----END PUBLIC KEY-----")
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
 import pytest
-from hypothesis import given, settings as h_settings
+from hypothesis import given
+from hypothesis import settings as h_settings
 from hypothesis import strategies as st
-
-from app.services.tenant_service import _VALID_TRANSITIONS
-
 
 # ---------------------------------------------------------------------------
 # Property 2: Deactivated Tenant Write Rejection (Req 1.6)
@@ -46,7 +45,7 @@ class TestProperty2Tier2:
     @pytest.mark.asyncio
     async def test_deactivated_tenant_write_blocked(self) -> None:
         """Middleware returns 403 TENANT_DEACTIVATED for writes."""
-        from app.middleware.tenant_context import TenantContextMiddleware, _WRITE_METHODS
+        from app.middleware.tenant_context import _WRITE_METHODS, TenantContextMiddleware
 
         middleware = TenantContextMiddleware(app=MagicMock())
 
@@ -143,7 +142,7 @@ class TestProperty3Tier2:
         """When commit raises due to quota trigger, upload fails cleanly."""
         from sqlalchemy.exc import IntegrityError
 
-        from app.services.document_service import DocumentService, ServiceUnavailableError
+        from app.services.document_service import DocumentService
 
         mock_db = AsyncMock()
         mock_db.commit.side_effect = IntegrityError(
@@ -293,7 +292,7 @@ class TestProperty19Tier2:
         mock_doc.encrypted_dek = b"dek"
         mock_doc.iv = b"iv"
         mock_doc.status = "stored"
-        mock_doc.created_at = datetime.now(timezone.utc)
+        mock_doc.created_at = datetime.now(UTC)
         mock_doc.schema_id = uuid4()
         mock_doc.beneficiary_id = "user@test.com"
 
@@ -356,7 +355,7 @@ class TestProperty32Tier2:
     @pytest.mark.asyncio
     async def test_search_sets_tenant_context(self) -> None:
         """SearchService.search calls set_tenant_context with the correct tenant_id."""
-        from app.services.search_service import SearchService, SearchParams
+        from app.services.search_service import SearchParams, SearchService
 
         mock_db = AsyncMock()
         # Mock the query results
@@ -388,7 +387,7 @@ class TestProperty32Tier2:
     @pytest.mark.asyncio
     async def test_different_tenants_get_isolated_results(self) -> None:
         """Two tenants calling search both trigger set_tenant_context with their own ID."""
-        from app.services.search_service import SearchService, SearchParams
+        from app.services.search_service import SearchParams, SearchService
 
         tenant_a = uuid4()
         tenant_b = uuid4()

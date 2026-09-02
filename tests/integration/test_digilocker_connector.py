@@ -6,7 +6,7 @@ Requirement 12.2: 5 retries at minimum 60-second intervals.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest

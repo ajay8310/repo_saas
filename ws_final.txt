@@ -1,0 +1,26 @@
+﻿repo_as_saas-worker-1 | Up 2 minutes
+repo_as_saas-beat-1 | Up 2 minutes
+repo_as_saas-api-1 | Up 10 minutes
+frontend | Up 2 hours
+repo_as_saas-localstack-1 | Up 2 hours (healthy)
+repo_as_saas-postgres-1 | Up 2 hours (healthy)
+repo_as_saas-redis-1 | Up 2 hours (healthy)
+repo_as_saas-clamav-1 | Up 2 hours (healthy)
+docker : time="2026-09-01T11:37:24+05:30" level=warning 
+msg="C:\\repo_as_saas\\docker-compose.yml: the attribute `version` is 
+obsolete, it will be ignored, please remove it to avoid potential confusion"
+At line:1 char:137
++ ... txt" -Encoding utf8; docker compose logs worker --tail 8 2>&1 | Out-F ...
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (time="2026-09-0...tial confusion" 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+worker-1  |     super().close()
+worker-1  |   File "/usr/local/lib/python3.12/asyncio/selector_events.py", line 875, in close
+worker-1  |     self._loop.call_soon(self._call_connection_lost, None)
+worker-1  |   File "/usr/local/lib/python3.12/asyncio/base_events.py", line 799, in call_soon
+worker-1  |     self._check_closed()
+worker-1  |   File "/usr/local/lib/python3.12/asyncio/base_events.py", line 545, in _check_closed
+worker-1  |     raise RuntimeError('Event loop is closed')
+worker-1  | RuntimeError: Event loop is closed

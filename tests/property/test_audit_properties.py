@@ -15,18 +15,19 @@ os.environ.setdefault("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nPLACE
 os.environ.setdefault("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nPLACEHOLDER\n-----END PUBLIC KEY-----")
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from hypothesis import given, settings as h_settings
-from hypothesis import strategies as st
+from hypothesis import given
+from hypothesis import settings as h_settings
 
 from app.models.audit import AuditLog
 from app.services.audit_service import AuditService
-from tests.property.strategies import roles, uuids
+from tests.property.strategies import roles
 
 
 class TestProperty35:
@@ -149,8 +150,9 @@ class TestProperty19:
 
     def test_document_service_has_audit_dependency(self) -> None:
         """DocumentService constructor initializes an AuditService instance."""
-        from app.services.document_service import DocumentService
         import inspect
+
+        from app.services.document_service import DocumentService
 
         source = inspect.getsource(DocumentService.__init__)
         # AuditService is wired in the constructor
@@ -158,8 +160,9 @@ class TestProperty19:
 
     def test_download_method_audits(self) -> None:
         """DocumentService.download_document references audit recording."""
-        from app.services.document_service import DocumentService
         import inspect
+
+        from app.services.document_service import DocumentService
 
         source = inspect.getsource(DocumentService.download_document)
         assert "audit" in source.lower() or "_audit" in source

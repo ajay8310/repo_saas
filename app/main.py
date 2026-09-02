@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,17 +29,16 @@ from app.config import get_settings
 from app.errors.handlers import register_exception_handlers
 from app.logging_config import configure_logging
 from app.routers import anchoring as anchoring_router
-from app.routers import auth as auth_router
-from app.routers import privacy as privacy_router
-from app.routers import tenants as tenants_router
-from app.routers import schemas as schemas_router
-from app.routers import documents as documents_router
-from app.routers import verification as verification_router
-from app.routers import search as search_router
-from app.routers import notifications as notifications_router
-from app.routers import webhooks as webhooks_router
 from app.routers import audit as audit_router
-
+from app.routers import auth as auth_router
+from app.routers import documents as documents_router
+from app.routers import notifications as notifications_router
+from app.routers import privacy as privacy_router
+from app.routers import schemas as schemas_router
+from app.routers import search as search_router
+from app.routers import tenants as tenants_router
+from app.routers import verification as verification_router
+from app.routers import webhooks as webhooks_router
 
 # ---------------------------------------------------------------------------
 # Lifespan (startup / shutdown hooks)

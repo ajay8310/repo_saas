@@ -6,12 +6,10 @@ Requirements: 8.2, 8.3, 4.5, 4.6, 13.3, 13.6, 13.8
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pyotp
@@ -19,7 +17,7 @@ import redis.asyncio as aioredis
 from fastapi import Depends
 from jose import jwt
 from passlib.context import CryptContext
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
@@ -88,7 +86,7 @@ class AuthService:
     ) -> TokenResult:
         """Create an RS256-signed JWT with standard claims (Req 8.2)."""
         exp_seconds = expires_in or self.settings.jwt_access_token_expire_seconds
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claims = {
             "sub": sub,
             "tenant_id": str(tenant_id),
@@ -127,7 +125,7 @@ class AuthService:
         if api_client.status == "revoked":
             return None
         if api_client.status == "grace_period":
-            if api_client.grace_until and api_client.grace_until < datetime.now(timezone.utc):
+            if api_client.grace_until and api_client.grace_until < datetime.now(UTC):
                 return None  # grace period expired
 
         # Verify the secret against the stored bcrypt hash
@@ -341,7 +339,7 @@ class AuthService:
 
         if user.failed_auth_attempts >= self.settings.max_failed_auth_attempts:
             lockout_duration = timedelta(minutes=self.settings.auth_lockout_minutes)
-            user.locked_until = datetime.now(timezone.utc) + lockout_duration
+            user.locked_until = datetime.now(UTC) + lockout_duration
 
             # Set lockout in Redis for fast checking
             lockout_key = f"{_LOCKOUT_PREFIX}{user.id}"
@@ -364,7 +362,7 @@ class AuthService:
 
         if user.failed_auth_attempts >= self.settings.max_failed_mfa_attempts:
             lockout_duration = timedelta(minutes=self.settings.mfa_lockout_minutes)
-            user.locked_until = datetime.now(timezone.utc) + lockout_duration
+            user.locked_until = datetime.now(UTC) + lockout_duration
 
             # Set lockout in Redis
             lockout_key = f"{_LOCKOUT_PREFIX}{user.id}"

@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from typing import Literal
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import select, text, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db

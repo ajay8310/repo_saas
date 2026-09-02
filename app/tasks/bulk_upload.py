@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from celery import shared_task
@@ -50,12 +50,13 @@ async def _process_async(
     cmk_arn: str,
 ) -> dict:
     """Async implementation of bulk upload processing."""
+    from sqlalchemy import select
+
     from app.config import get_settings
     from app.db.session import AsyncSessionLocal
     from app.middleware.tenant_context import set_tenant_context
     from app.models.document import BulkJob
     from app.services.document_service import DocumentService
-    from sqlalchemy import select
 
     settings = get_settings()
     results = {
@@ -104,7 +105,7 @@ async def _process_async(
             job.success_count = results["success_count"]
             job.failed_count = results["failed_count"]
             job.summary = results
-            job.completed_at = datetime.now(timezone.utc)
+            job.completed_at = datetime.now(UTC)
             await db.commit()
 
     logger.info(

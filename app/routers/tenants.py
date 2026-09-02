@@ -23,9 +23,7 @@ from pydantic import BaseModel, Field
 
 from app.rbac.permissions import require_permission
 from app.services.tenant_service import (
-    RotatedCredentials,
     TenantConflictError,
-    TenantCredentials,
     TenantNotFoundError,
     TenantService,
     TenantTransitionError,

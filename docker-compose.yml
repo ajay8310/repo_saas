@@ -124,6 +124,36 @@ services:
     profiles:
       - migrate
 
+  # ---------- MCP server (Model Context Protocol) ----------
+  # Isolated image (own pydantic/mcp deps). This is a stdio server, so it is
+  # NOT a long-running network service — it is launched on demand by an MCP
+  # client. This entry exists mainly to BUILD the image within the compose
+  # project and to allow a manual interactive run:
+  #
+  #   Build:  docker compose --profile mcp build mcp
+  #   Run  :  docker compose run --rm mcp            (interactive stdio)
+  #
+  # An MCP client (e.g. Kiro) should launch its own container via `docker run`
+  # (see .kiro/settings/mcp.json) so it owns the stdin/stdout pipes directly.
+  mcp:
+    build:
+      context: .
+      target: mcp
+    image: repo_as_saas-mcp
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reposaaas:reposaaas@postgres:5432/reposaaas
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://localstack:4566
+      KMS_ENDPOINT_URL: http://localstack:4566
+    stdin_open: true
+    tty: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - mcp
+
 volumes:
   pgdata:
   localstack_data:

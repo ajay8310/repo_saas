@@ -5,11 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, BigInteger, String, ForeignKey, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, UUIDPrimaryKeyMixin, TimestampMixin
+from app.models.base import Base, UUIDPrimaryKeyMixin
 
 
 class Tenant(Base, UUIDPrimaryKeyMixin):
@@ -36,8 +36,8 @@ class Tenant(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    encryption_keys: Mapped[list["TenantEncryptionKey"]] = relationship(back_populates="tenant")
-    api_clients: Mapped[list["ApiClient"]] = relationship(back_populates="tenant")
+    encryption_keys: Mapped[list[TenantEncryptionKey]] = relationship(back_populates="tenant")
+    api_clients: Mapped[list[ApiClient]] = relationship(back_populates="tenant")
 
 
 class TenantEncryptionKey(Base, UUIDPrimaryKeyMixin):
@@ -55,7 +55,7 @@ class TenantEncryptionKey(Base, UUIDPrimaryKeyMixin):
     )
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    tenant: Mapped["Tenant"] = relationship(back_populates="encryption_keys")
+    tenant: Mapped[Tenant] = relationship(back_populates="encryption_keys")
 
 
 class ApiClient(Base, UUIDPrimaryKeyMixin):
@@ -76,4 +76,4 @@ class ApiClient(Base, UUIDPrimaryKeyMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    tenant: Mapped["Tenant"] = relationship(back_populates="api_clients")
+    tenant: Mapped[Tenant] = relationship(back_populates="api_clients")

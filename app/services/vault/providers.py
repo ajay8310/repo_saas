@@ -12,10 +12,8 @@ mislays a tenant id cannot decrypt another tenant's values.
 
 from __future__ import annotations
 
-import base64
 import logging
 import os
-from functools import lru_cache
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM

@@ -29,7 +29,7 @@ Requirements: 5.x (consent-scoped disclosure), 7.5, 10.4
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -96,7 +96,7 @@ class ConsentService:
             )
 
         await set_tenant_context(self.db, str(tenant_id))
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         expires_at = None
         if self.settings.consent_default_expiry_days > 0:
@@ -151,7 +151,7 @@ class ConsentService:
         if current is None or current.state != "granted":
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         record = ConsentRecord(
             tenant_id=tenant_id,
             data_principal_id=data_principal_id,
@@ -209,7 +209,7 @@ class ConsentService:
         if (
             record.state == "granted"
             and record.expires_at is not None
-            and record.expires_at < datetime.now(timezone.utc)
+            and record.expires_at < datetime.now(UTC)
         ):
             record.state = "expired"
         return record

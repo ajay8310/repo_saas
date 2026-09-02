@@ -15,22 +15,25 @@ os.environ.setdefault("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nPLACE
 os.environ.setdefault("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nPLACEHOLDER\n-----END PUBLIC KEY-----")
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
+from datetime import UTC
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from hypothesis import given, settings as h_settings
+from hypothesis import given
+from hypothesis import settings as h_settings
 from hypothesis import strategies as st
 from jose import ExpiredSignatureError, jwt
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.services.auth_service import AuthService, TokenResult
-from tests.property.strategies import jwt_expiry_seconds, roles
+from app.services.auth_service import AuthService
+from tests.property.strategies import jwt_expiry_seconds
 
 
 def _make_keys():
@@ -95,9 +98,9 @@ class TestProperty28:
     """Property 28: Expired JWT Returns 401 (Req 8.3)."""
 
     def test_expired_token_fails_decode(self) -> None:
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claims = {
             "sub": "client",
             "tenant_id": str(uuid4()),

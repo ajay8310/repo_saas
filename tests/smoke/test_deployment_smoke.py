@@ -10,7 +10,6 @@ Requirements: 3.6, 7.1, 7.3, 8.1, 8.5, 10.4, 13.7
 
 from __future__ import annotations
 
-import json
 import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test_user:test_pass@localhost:5433/test_reposaaas")
@@ -25,10 +24,11 @@ os.environ.setdefault("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nPLACE
 os.environ.setdefault("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nPLACEHOLDER\n-----END PUBLIC KEY-----")
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 
-import pytest
 import boto3
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -331,10 +331,10 @@ class TestEncryptionConfiguration:
 
     def test_encryption_service_uses_aes256(self) -> None:
         """EncryptionService uses AES-256-GCM for content encryption."""
-        from app.services.encryption_service import EncryptionService
-
         # Verify the service exists and uses AES-256
         import inspect
+
+        from app.services.encryption_service import EncryptionService
         source = inspect.getsource(EncryptionService)
         assert "AES" in source or "aes" in source or "256" in source
 

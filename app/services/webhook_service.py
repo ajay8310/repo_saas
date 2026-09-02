@@ -13,7 +13,7 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -228,7 +228,7 @@ class WebhookService:
             # Exponential backoff: base_delay * 2^attempt
             base_delay = self.settings.webhook_first_retry_delay_seconds
             delay = base_delay * (2 ** (event.attempt_count - 1))
-            event.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+            event.next_retry_at = datetime.now(UTC) + timedelta(seconds=delay)
 
         await self.db.commit()
         return False

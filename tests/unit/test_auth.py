@@ -15,7 +15,7 @@ Requirements covered: 8.2, 8.3
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -33,6 +33,7 @@ os.environ.setdefault(
 )
 
 from app.config import get_settings
+
 get_settings.cache_clear()
 # ---------------------------------------------------------------------------
 
@@ -198,7 +199,7 @@ class TestJWTIssuance:
         service = self._make_service()
 
         # Issue a token that's already expired (negative expiry)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired_claims = {
             "sub": "client-1",
             "tenant_id": str(uuid4()),

@@ -6,21 +6,19 @@ Requirements: 10.1, 10.5
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import get_db
 from app.dependencies.auth import TokenPayload, get_current_user
 from app.middleware.tenant_context import set_tenant_context
 from app.models.audit import AuditLog
 from app.rbac.permissions import require_permission
-
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.session import get_db
 
 router = APIRouter(prefix="/audit-logs", tags=["audit"])
 

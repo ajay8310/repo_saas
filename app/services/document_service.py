@@ -16,25 +16,23 @@ import json
 import logging
 import uuid as uuid_mod
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import boto3
 from fastapi import Depends
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.middleware.tenant_context import set_tenant_context
-from app.models.document import BulkJob, Document
+from app.models.document import Document
 from app.models.schema import DocumentSchema
 from app.models.tenant import Tenant
 from app.services.audit_service import AuditService
 from app.services.encryption_service import (
-    EncryptedPayload,
-    EncryptionService,
     EncryptionUnavailableError,
     get_encryption_service,
 )
@@ -240,9 +238,9 @@ class DocumentService:
     ) -> None:
         """Dispatch post-upload events (best effort, non-blocking)."""
         try:
+            from app.services.digilocker_connector import DigiLockerConnector
             from app.services.notification_service import NotificationService
             from app.services.webhook_service import WebhookService
-            from app.services.digilocker_connector import DigiLockerConnector
 
             # Notification to beneficiary
             notifier = NotificationService(db=self.db, settings=self.settings)
@@ -532,7 +530,7 @@ class DocumentService:
             raise DocumentAlreadyRevokedError(credential_id)
 
         doc.status = "revoked"
-        doc.revoked_at = datetime.now(timezone.utc)
+        doc.revoked_at = datetime.now(UTC)
         doc.revocation_reason = reason
 
         # Audit log — same transaction (Req 10.7)
@@ -591,7 +589,7 @@ class DocumentService:
         """
         await set_tenant_context(self.db, str(tenant_id))
         results = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for cid in credential_ids:
             result = await self.db.execute(

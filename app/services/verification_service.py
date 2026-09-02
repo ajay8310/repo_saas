@@ -14,7 +14,7 @@ import logging
 import secrets
 from base64 import urlsafe_b64encode
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -94,7 +94,7 @@ class VerificationService:
         raw_token = urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
 
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=hours)
+        expires_at = datetime.now(UTC) + timedelta(hours=hours)
 
         vt = VerificationToken(
             tenant_id=tenant_id,
@@ -134,7 +134,7 @@ class VerificationService:
                 issuer_name=None, issued_at=None, fields=None, revoked_at=None,
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if vt.expires_at < now:
             return VerificationResult(
                 valid=False, status="expired",

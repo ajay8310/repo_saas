@@ -15,7 +15,6 @@ from sqlalchemy import select
 
 from app.dependencies.auth import TokenPayload, get_current_user
 from app.rbac.permissions import require_permission
-from app.tasks.dispatch import enqueue_bulk_upload
 from app.services.document_service import (
     DocumentAlreadyRevokedError,
     DocumentNotFoundError,
@@ -24,6 +23,7 @@ from app.services.document_service import (
     ServiceUnavailableError,
     get_document_service,
 )
+from app.tasks.dispatch import enqueue_bulk_upload
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -258,9 +258,9 @@ async def bulk_upload(
     service: DocumentService = Depends(get_document_service),
 ) -> BulkJobResponse:
     """Initiate bulk upload (Req 3.8, 3.9). Returns job_id for tracking."""
-    from app.models.document import BulkJob
+
     from app.middleware.tenant_context import set_tenant_context
-    import uuid as uuid_mod
+    from app.models.document import BulkJob
 
     await set_tenant_context(service.db, str(user.tenant_id))
 

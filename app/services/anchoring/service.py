@@ -24,7 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -150,7 +150,7 @@ class AnchoringService:
             issued_at=(
                 document.created_at.isoformat()
                 if document.created_at
-                else datetime.now(timezone.utc).isoformat()
+                else datetime.now(UTC).isoformat()
             ),
         )
 

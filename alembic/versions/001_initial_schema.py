@@ -10,8 +10,6 @@ Requirements: 7.1, 7.3, 7.4, 10.2, 10.4, 3.7
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # ---------------------------------------------------------------------------
 # Alembic identifiers

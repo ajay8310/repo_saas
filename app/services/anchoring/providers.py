@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -65,7 +65,7 @@ class LocalLedgerAnchorProvider:
         prev_seq = tip[0] if tip else 0
         prev_hash = tip[1] if tip else "0" * 64
         seq = prev_seq + 1
-        anchored_at = datetime.now(timezone.utc)
+        anchored_at = datetime.now(UTC)
 
         entry_hash = hashlib.sha256(
             f"{seq}|{prev_hash}|{root_hex}|{anchored_at.isoformat()}".encode()
@@ -169,7 +169,7 @@ class EvmAnchorProvider:
             provider=self.name,
             ledger_ref=tx_hash,
             root_hex=root_hex,
-            anchored_at=datetime.now(timezone.utc),
+            anchored_at=datetime.now(UTC),
             metadata={"contract": self._contract, "chain_rpc": self._rpc_url},
         )
 
