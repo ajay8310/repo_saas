@@ -213,7 +213,9 @@ class TestProperty4Tier2:
         mock_pipe.zcard = MagicMock(return_value=mock_pipe)
         mock_pipe.zadd = MagicMock(return_value=mock_pipe)
         mock_pipe.expire = MagicMock(return_value=mock_pipe)
-        mock_redis.pipeline.return_value = mock_pipe
+        # redis.pipeline() is synchronous (returns the pipeline); on an AsyncMock
+        # it would return a coroutine, so make it a plain MagicMock.
+        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
 
         # zremrangebyscore for cleanup after block
         mock_redis.zremrangebyscore = AsyncMock()
@@ -242,7 +244,8 @@ class TestProperty4Tier2:
         mock_pipe.zcard = MagicMock(return_value=mock_pipe)
         mock_pipe.zadd = MagicMock(return_value=mock_pipe)
         mock_pipe.expire = MagicMock(return_value=mock_pipe)
-        mock_redis.pipeline.return_value = mock_pipe
+        # redis.pipeline() is synchronous — see note above.
+        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
 
         service = RateLimiterService(
             redis=mock_redis, default_limit=100, window_seconds=60
@@ -436,7 +439,9 @@ class TestProperty37Tier2:
         from app.services.audit_service import AuditService
 
         mock_db = AsyncMock()
-        mock_db.add.side_effect = RuntimeError("disk full — cannot write audit")
+        # Session.add is synchronous; AsyncMock would swallow the side_effect
+        # behind an un-awaited coroutine.
+        mock_db.add = MagicMock(side_effect=RuntimeError("disk full — cannot write audit"))
 
         service = AuditService(db=mock_db)
 

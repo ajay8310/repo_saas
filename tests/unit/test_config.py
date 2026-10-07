@@ -182,19 +182,36 @@ class TestBounds:
 
 
 class TestCeleryDefaults:
-    """Celery broker/backend should default to redis_url."""
+    """Celery broker/backend should default to redis_url.
 
-    def test_celery_broker_defaults_to_redis_url(self) -> None:
-        s = Settings(**VALID_BASE)
+    These disable env sources so the defaulting logic is tested against the
+    provided ``redis_url`` kwarg rather than whatever ``REDIS_URL`` the host or
+    container happens to export (which otherwise overrides init kwargs in
+    pydantic-settings and makes the assertion environment-dependent).
+    """
+
+    _ENV_KEYS = [
+        "DATABASE_URL", "REDIS_URL", "S3_BUCKET_NAME",
+        "JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY",
+        "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND",
+    ]
+
+    def _make(self, monkeypatch, **overrides) -> Settings:
+        for key in self._ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        return Settings(_env_file=None, **{**VALID_BASE, **overrides})
+
+    def test_celery_broker_defaults_to_redis_url(self, monkeypatch) -> None:
+        s = self._make(monkeypatch)
         assert s.celery_broker_url == VALID_BASE["redis_url"]
 
-    def test_celery_backend_defaults_to_redis_url(self) -> None:
-        s = Settings(**VALID_BASE)
+    def test_celery_backend_defaults_to_redis_url(self, monkeypatch) -> None:
+        s = self._make(monkeypatch)
         assert s.celery_result_backend == VALID_BASE["redis_url"]
 
-    def test_celery_broker_can_be_overridden(self) -> None:
+    def test_celery_broker_can_be_overridden(self, monkeypatch) -> None:
         custom_broker = "amqp://guest:guest@localhost//"
-        s = Settings(**{**VALID_BASE, "celery_broker_url": custom_broker})
+        s = self._make(monkeypatch, celery_broker_url=custom_broker)
         assert s.celery_broker_url == custom_broker
 
 

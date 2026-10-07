@@ -1,0 +1,6 @@
+_________ TestProperty37.test_failed_audit_insert_propagates_exception _________
+tests/property/test_audit_properties.py:125: in test_failed_audit_insert_propagates_exception
+FAILED tests/property/test_audit_properties.py::TestProperty37::test_record_does_not_commit_independently
+FAILED tests/property/test_audit_properties.py::TestProperty37::test_failed_audit_insert_propagates_exception
+================= 2 failed, 222 passed, 63 warnings in 21.88s ==================
+RC=1

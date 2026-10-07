@@ -16,6 +16,8 @@ import WalletPage from './pages/beneficiary/WalletPage'
 import NotificationsPage from './pages/beneficiary/NotificationsPage'
 import VerifyPage from './pages/public/VerifyPage'
 import LandingPage from './pages/public/LandingPage'
+import DirectoryPage from './pages/public/DirectoryPage'
+import BadgeAnalyticsPage from './pages/tenant/BadgeAnalyticsPage'
 
 /**
  * Role sets per area, mirroring ROLE_PERMISSIONS in app/rbac/permissions.py.
@@ -43,6 +45,7 @@ export default function App() {
       />
       <Route path="/verify/:credentialId" element={<VerifyPage />} />
       <Route path="/verify" element={<VerifyPage />} />
+      <Route path="/directory" element={<DirectoryPage />} />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
       {/* Authenticated. Pathless layout route: the shell wraps these children
@@ -85,6 +88,14 @@ export default function App() {
           element={
             <ProtectedRoute requiredRoles={ISSUING_ROLES}>
               <BadgeClassesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="badge-analytics"
+          element={
+            <ProtectedRoute requiredRoles={ISSUING_ROLES}>
+              <BadgeAnalyticsPage />
             </ProtectedRoute>
           }
         />

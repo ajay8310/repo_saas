@@ -18,7 +18,7 @@ from app.config import get_settings
 
 get_settings.cache_clear()
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -95,6 +95,7 @@ class TestProperty37:
     async def test_record_does_not_commit_independently(self) -> None:
         """AuditService.record() adds to session but does not call commit."""
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # Session.add is synchronous
         service = AuditService(db=mock_db)
 
         await service.record(
@@ -114,9 +115,14 @@ class TestProperty37:
 
     @pytest.mark.asyncio
     async def test_failed_audit_insert_propagates_exception(self) -> None:
-        """If db.add raises, the exception propagates to the caller."""
+        """If db.add raises, the exception propagates to the caller.
+
+        ``Session.add`` is synchronous on a real session, so it is mocked with a
+        plain MagicMock; an AsyncMock would make ``add`` return a coroutine and
+        the side_effect would never fire (the service does not await ``add``).
+        """
         mock_db = AsyncMock()
-        mock_db.add.side_effect = RuntimeError("simulated DB error")
+        mock_db.add = MagicMock(side_effect=RuntimeError("simulated DB error"))
 
         service = AuditService(db=mock_db)
 

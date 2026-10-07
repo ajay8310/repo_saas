@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, Building2, FileText, Database,
-  Webhook, ScrollText, LogOut, FolderOpen, User, ShieldCheck, Bell, Award
+  Webhook, ScrollText, LogOut, FolderOpen, User, ShieldCheck, Bell, Award, BarChart3
 } from 'lucide-react'
 
 export default function Layout() {
@@ -21,6 +21,7 @@ export default function Layout() {
     { to: '/schemas', label: 'Schemas', icon: Database, show: isIssuing },
     { to: '/documents', label: 'Documents', icon: FileText, show: isIssuing },
     { to: '/badges', label: 'Badges', icon: Award, show: isIssuing },
+    { to: '/badge-analytics', label: 'Badge Analytics', icon: BarChart3, show: isIssuing },
     { to: '/my-documents', label: 'My Documents', icon: FolderOpen, show: hasRole('beneficiary') },
     { to: '/wallet', label: 'My Wallet', icon: Award, show: hasRole('beneficiary') },
     { to: '/notifications', label: 'Notifications', icon: Bell, show: hasRole('beneficiary') },
