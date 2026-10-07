@@ -23,8 +23,16 @@ export default function LoginPage() {
   // block and its devAuth import are tree-shaken out entirely.
   const showDemoLogin = import.meta.env.DEV
 
-  const handleDemoLogin = (role: DemoRole) => {
-    login(mintDemoToken(role))
+  const handleDemoLogin = async (role: DemoRole) => {
+    // Prefer a REAL RS256 token from the backend so the demo exercises live
+    // auth and real badge/certificate/analytics data. Fall back to the
+    // client-side stub only if the backend is unreachable (offline browsing).
+    try {
+      const res = await api.post('/auth/dev-token', { role })
+      login(res.data.access_token)
+    } catch {
+      login(mintDemoToken(role))
+    }
     navigate('/dashboard')
   }
 

@@ -1,8 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Award, Plus, Edit, Send, Users, Ban, Globe, Building2, FileText } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
 import type { BadgeClass, CertificateTemplate } from '@/lib/badges'
-import { BULK_ISSUE_MAX, CERTIFICATE_TEMPLATES } from '@/lib/badges'
+import {
+  BULK_ISSUE_MAX,
+  CERTIFICATE_TEMPLATES,
+  listBadgeClasses,
+  createBadgeClass,
+  setCertificateTemplate,
+} from '@/lib/badges'
 
 /**
  * Badge Classes console (Credly-style credentialing, U1).
@@ -42,6 +48,7 @@ const EMPTY_FORM: CreateForm = {
 
 export default function BadgeClassesPage() {
   const [badges, setBadges] = useState<BadgeClass[]>(INITIAL_BADGES)
+  const [live, setLive] = useState(false)
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<BadgeClass | null>(null)
   const [issuing, setIssuing] = useState<BadgeClass | null>(null)
@@ -49,7 +56,24 @@ export default function BadgeClassesPage() {
   const [editingProfile, setEditingProfile] = useState(false)
   const { toast, notify } = useToast()
 
-  const handleCreate = (form: CreateForm) => {
+  // Load real badge classes when authenticated against the live API. On failure
+  // (offline / stub token) keep the seeded demo rows so the page still renders.
+  useEffect(() => {
+    let active = true
+    listBadgeClasses()
+      .then(rows => {
+        if (active && Array.isArray(rows)) {
+          setLive(true)
+          if (rows.length > 0) setBadges(rows)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const handleCreate = async (form: CreateForm) => {
     const name = form.name.trim()
     if (!name) {
       notify('Badge name is required.', 'error')
@@ -59,16 +83,30 @@ export default function BadgeClassesPage() {
       notify(`A badge named "${name}" already exists.`, 'error')
       return
     }
-    const row: BadgeClass = {
-      id: `bc-${Date.now()}`,
+    const input = {
       name,
       description: form.description.trim() || null,
       criteria_narrative: form.criteria_narrative.trim() || null,
-      criteria_url: null,
       tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
+      validity_days: form.validity_days ? Number(form.validity_days) : null,
+    }
+    if (live) {
+      try {
+        const created = await createBadgeClass(input)
+        setBadges(prev => [created, ...prev])
+        setCreating(false)
+        notify(`Created badge "${name}".`)
+        return
+      } catch {
+        notify('Could not create on the server; showing locally.', 'error')
+      }
+    }
+    const row: BadgeClass = {
+      id: `bc-${Date.now()}`,
+      ...input,
+      criteria_url: null,
       alignment: [],
       image_s3_key: null,
-      validity_days: form.validity_days ? Number(form.validity_days) : null,
       status: 'active',
       directory_visible: false,
       certificate_template: 'classic',
@@ -79,7 +117,14 @@ export default function BadgeClassesPage() {
     notify(`Created badge "${name}".`)
   }
 
-  const changeTemplate = (badge: BadgeClass, template: CertificateTemplate) => {
+  const changeTemplate = async (badge: BadgeClass, template: CertificateTemplate) => {
+    if (live) {
+      try {
+        await setCertificateTemplate(badge.id, template)
+      } catch {
+        notify('Could not save template on the server.', 'error')
+      }
+    }
     setBadges(prev =>
       prev.map(b => (b.id === badge.id ? { ...b, certificate_template: template } : b)),
     )
@@ -106,18 +151,29 @@ export default function BadgeClassesPage() {
     setEditing(null)
   }
 
-  const handleIssue = (beneficiaryId: string) => {
+  const handleIssue = async (beneficiaryId: string) => {
     if (!issuing) return
     const id = beneficiaryId.trim()
     if (!id.includes('@')) {
       notify('Enter a valid recipient email.', 'error')
       return
     }
+    if (live) {
+      try {
+        const { issueBadge } = await import('@/lib/badges')
+        const a = await issueBadge(issuing.id, id)
+        notify(`Issued "${issuing.name}" to ${id} (assertion ${a.assertion_id.slice(0, 8)}…).`)
+        setIssuing(null)
+        return
+      } catch {
+        notify('Could not issue on the server.', 'error')
+      }
+    }
     notify(`Issued "${issuing.name}" to ${id}.`)
     setIssuing(null)
   }
 
-  const handleBulkIssue = (raw: string) => {
+  const handleBulkIssue = async (raw: string) => {
     if (!bulkIssuing) return
     const ids = raw.split(/[\n,]/).map(s => s.trim()).filter(Boolean)
     if (ids.length === 0) {
@@ -127,6 +183,17 @@ export default function BadgeClassesPage() {
     if (ids.length > BULK_ISSUE_MAX) {
       notify(`${ids.length} exceeds the ${BULK_ISSUE_MAX.toLocaleString()} limit.`, 'error')
       return
+    }
+    if (live) {
+      try {
+        const { bulkIssueBadges } = await import('@/lib/badges')
+        await bulkIssueBadges(bulkIssuing.id, ids)
+        notify(`Queued bulk issue of "${bulkIssuing.name}" to ${ids.length} recipient(s).`)
+        setBulkIssuing(null)
+        return
+      } catch {
+        notify('Could not queue bulk issue on the server.', 'error')
+      }
     }
     notify(`Queued bulk issue of "${bulkIssuing.name}" to ${ids.length} recipient(s).`)
     setBulkIssuing(null)

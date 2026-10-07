@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Award, Globe, Lock, EyeOff, Eye, Trash2, Share2, Download, Ban } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
 import { savePdfBlob } from '@/lib/badges'
 import type { WalletItem } from '@/lib/wallet'
+import { listWallet } from '@/lib/wallet'
 
 /**
  * Recipient wallet (U2 S7/S9/S10/S11/S12 + U4 certificate download).
@@ -41,15 +42,41 @@ const INITIAL_WALLET: WalletItem[] = [
 
 export default function WalletPage() {
   const [items, setItems] = useState<WalletItem[]>(INITIAL_WALLET)
+  const [live, setLive] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const { toast, notify } = useToast()
 
+  // Load the real wallet when authenticated against the live API; fall back to
+  // seeded demo badges otherwise so the page always renders.
+  useEffect(() => {
+    let active = true
+    listWallet(true)
+      .then(rows => {
+        if (active && Array.isArray(rows)) {
+          setLive(true)
+          if (rows.length > 0) setItems(rows)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [])
+
   const visible = showHidden ? items : items.filter(i => !i.hidden)
 
-  const togglePublic = (item: WalletItem) => {
+  const togglePublic = async (item: WalletItem) => {
     if (item.status === 'revoked' && !item.public) {
       notify('A revoked badge cannot be made public.', 'error')
       return
+    }
+    if (live) {
+      try {
+        const { setWalletPublic } = await import('@/lib/wallet')
+        await setWalletPublic(item.assertion_id, !item.public)
+      } catch {
+        notify('Could not update visibility on the server.', 'error')
+      }
     }
     setItems(prev =>
       prev.map(i => (i.assertion_id === item.assertion_id ? { ...i, public: !i.public } : i)),
@@ -57,17 +84,33 @@ export default function WalletPage() {
     notify(item.public ? `"${item.badge_name}" is now private.` : `"${item.badge_name}" is now public.`)
   }
 
-  const toggleHidden = (item: WalletItem) => {
+  const toggleHidden = async (item: WalletItem) => {
+    if (live) {
+      try {
+        const { setWalletHidden } = await import('@/lib/wallet')
+        await setWalletHidden(item.assertion_id, !item.hidden)
+      } catch {
+        notify('Could not update on the server.', 'error')
+      }
+    }
     setItems(prev =>
       prev.map(i => (i.assertion_id === item.assertion_id ? { ...i, hidden: !i.hidden } : i)),
     )
     notify(item.hidden ? `"${item.badge_name}" restored.` : `"${item.badge_name}" hidden.`)
   }
 
-  const removeFromWallet = (item: WalletItem) => {
+  const removeFromWallet = async (item: WalletItem) => {
     if (!window.confirm(
       `Remove "${item.badge_name}" from your wallet?\n\nIt stays verifiable via its link but leaves your active wallet and the public directory.`,
     )) return
+    if (live) {
+      try {
+        const { deleteFromWallet } = await import('@/lib/wallet')
+        await deleteFromWallet(item.assertion_id)
+      } catch {
+        notify('Could not remove on the server.', 'error')
+      }
+    }
     setItems(prev =>
       prev.map(i =>
         i.assertion_id === item.assertion_id ? { ...i, hidden: true, public: false } : i,
