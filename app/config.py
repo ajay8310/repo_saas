@@ -482,6 +482,78 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Badges (Credly-style credentialing — U1/U2/U3)
+    # ------------------------------------------------------------------
+    public_base_url: str = Field(
+        default="http://localhost:8000",
+        description=(
+            "Public base URL used to build hosted Open Badges assertion, class, "
+            "and issuer URLs (the verifiable artifact). No trailing slash."
+        ),
+    )
+    badge_image_prefix: str = Field(
+        default="badges",
+        description="S3 key prefix under which badge class images are stored.",
+    )
+    obadge_cache_ttl_seconds: int = Field(
+        default=60,
+        ge=0,
+        description=(
+            "TTL for cached hosted badge JSON. Short so revocation/visibility "
+            "changes converge quickly while still absorbing verification spikes."
+        ),
+    )
+    presigned_url_ttl_seconds: int = Field(
+        default=900,
+        ge=60,
+        description="Lifetime of presigned S3 GET URLs for badge images (seconds).",
+    )
+    public_rate_limit_per_ip: int = Field(
+        default=120,
+        ge=1,
+        description="Max requests per IP per window on unauthenticated public badge routes.",
+    )
+    public_rate_limit_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        description="Rolling window (seconds) for the per-IP public route limiter.",
+    )
+
+    # ------------------------------------------------------------------
+    # Certificates (U4)
+    # ------------------------------------------------------------------
+    certificate_default_template: str = Field(
+        default="classic",
+        description="Fallback certificate template (classic|modern|elegant|minimal).",
+    )
+    certificate_photo_max_bytes: int = Field(
+        default=5 * 1024 * 1024,  # 5 MB
+        ge=1024,
+        description="Maximum recipient-photo upload size for certificates, in bytes.",
+    )
+
+    # ------------------------------------------------------------------
+    # Public directory & analytics (U3)
+    # ------------------------------------------------------------------
+    analytics_aggregation_interval_seconds: int = Field(
+        default=120,
+        ge=30,
+        description="Celery beat interval for badge analytics aggregation (Q6=A).",
+    )
+    directory_page_size_default: int = Field(
+        default=20,
+        ge=1,
+        le=200,
+        description="Default page size for public directory keyset pagination.",
+    )
+    directory_page_size_max: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Maximum page size a public directory request may ask for.",
+    )
+
+    # ------------------------------------------------------------------
     # Malware scanning
     # ------------------------------------------------------------------
     clamav_host: str = Field(

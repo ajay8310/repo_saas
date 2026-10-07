@@ -14,7 +14,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - Create `app/main.py` with FastAPI app factory, CORS middleware, and health-check endpoint `GET /health`
     - _Requirements: 8.1, 14.1_
 
-  - [-] 1.2 Create database migrations for all core tables
+  - [ ] 1.2 Create database migrations for all core tables
     - Write Alembic migration for: `tenants`, `tenant_encryption_keys`, `api_clients`, `user_accounts`, `document_schemas`, `schema_versions`, `documents`, `bulk_jobs`, `verification_tokens`, `audit_logs`, `webhooks`, `webhook_events`, `notification_preferences`, `digilocker_pushes`
     - Add `tenant_id UUID NOT NULL` column to all tenant-scoped tables
     - Apply `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` to all tenant-scoped tables
@@ -24,7 +24,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - Partition `audit_logs` table by month (`PARTITION BY RANGE (created_at)`)
     - _Requirements: 7.1, 7.3, 7.4, 10.2, 10.4, 3.7_
 
-  - [~] 1.3 Implement SQLAlchemy async models and database session middleware
+  - [ ] 1.3 Implement SQLAlchemy async models and database session middleware
     - Define async SQLAlchemy models for all tables in `app/models/`
     - Create `app/db/session.py` with async engine, session factory, and `get_db` dependency
     - Implement `TenantContextMiddleware` in `app/middleware/tenant_context.py` that sets `app.tenant_id` via `SET LOCAL app.tenant_id = '...'` at the start of every transaction
@@ -32,7 +32,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
 
 
 - [ ] 2. Authentication Service
-  - [~] 2.1 Implement OAuth 2.0 client credentials flow and JWT issuance
+  - [ ] 2.1 Implement OAuth 2.0 client credentials flow and JWT issuance
     - Create `app/services/auth_service.py` with `issue_token(client_id, client_secret) -> TokenResponse`
     - Generate RS256-signed JWTs with `iat`, `exp` (≤ 3600s), `sub`, `tenant_id`, `roles` claims
     - Store `client_secret_hash` using bcrypt; validate on token request
@@ -49,7 +49,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 28: Expired JWT Returns 401**
     - **Validates: Requirements 8.3**
 
-  - [~] 2.4 Implement OTP-based authentication for beneficiaries
+  - [ ] 2.4 Implement OTP-based authentication for beneficiaries
     - Implement `POST /api/v1/auth/otp/request` — generate 6-digit code, store bcrypt hash in Redis with 600s TTL
     - Implement `POST /api/v1/auth/otp/verify` — validate code, mark used (delete from Redis), return JWT
     - Ensure OTP is invalidated after first use or after 10 minutes
@@ -59,7 +59,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 17: OTP Single-Use and Expiry Enforcement**
     - **Validates: Requirements 4.6**
 
-  - [~] 2.6 Implement MFA (TOTP) for admin accounts
+  - [ ] 2.6 Implement MFA (TOTP) for admin accounts
     - Implement `POST /api/v1/auth/mfa/challenge` and `POST /api/v1/auth/mfa/verify` using `pyotp` (RFC 6238)
     - Require MFA step within 5 minutes; deny access if not completed in time
     - Store `mfa_secret` on `user_accounts`; require enrollment before first admin login
@@ -69,7 +69,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 40: MFA Required for Admin Roles**
     - **Validates: Requirements 13.3**
 
-  - [~] 2.8 Implement account lockout logic
+  - [ ] 2.8 Implement account lockout logic
     - Track `failed_auth_attempts` and `locked_until` on `user_accounts` (also cache in Redis)
     - Lock account for 15 minutes after 5 consecutive failed attempts within 10 minutes
     - Lock admin account for 30 minutes after 3 consecutive failed MFA attempts
@@ -84,12 +84,12 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 43: MFA Account Lockout After 3 Failed MFA Attempts**
     - **Validates: Requirements 13.8**
 
-- [~] 3. Checkpoint — Ensure all auth tests pass
+- [ ] 3. Checkpoint — Ensure all auth tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
 - [ ] 4. RBAC middleware and error handling infrastructure
-  - [~] 4.1 Implement RBAC permission enforcement middleware
+  - [ ] 4.1 Implement RBAC permission enforcement middleware
     - Define role permission map in `app/rbac/permissions.py` for roles: `super_admin`, `tenant_admin`, `issuer`, `beneficiary`, `verifier`
     - Implement `require_permission(operation)` FastAPI dependency that returns HTTP 403 `FORBIDDEN` within 2 seconds if role lacks permission
     - Write audit log entry (actor, attempted operation, target resource, UTC timestamp) on every 403
@@ -99,7 +99,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 39: RBAC Permission Enforcement**
     - **Validates: Requirements 13.1, 13.2**
 
-  - [~] 4.3 Implement global error response format and HTTP 422 validation handler
+  - [ ] 4.3 Implement global error response format and HTTP 422 validation handler
     - Create `app/errors/handlers.py` with FastAPI exception handlers for all error codes in the taxonomy
     - Override FastAPI's default `RequestValidationError` handler to return HTTP 422 with field name, rejected value, and human-readable description for each invalid field
     - _Requirements: 8.6_
@@ -108,14 +108,14 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 29: HTTP 422 with Field-Level Errors for Invalid Payloads**
     - **Validates: Requirements 8.6**
 
-  - [~] 4.5 Implement tenant status middleware (suspension / deactivation guards)
+  - [ ] 4.5 Implement tenant status middleware (suspension / deactivation guards)
     - In `TenantContextMiddleware`, after JWT validation, look up tenant status from Redis cache (TTL 5s)
     - Return `403 TENANT_SUSPENDED` for suspended tenants; allow reads but reject writes for deactivated (archived) tenants
     - _Requirements: 1.5, 1.6_
 
 
 - [ ] 5. Rate Limiter
-  - [~] 5.1 Implement per-tenant Redis token-bucket rate limiter
+  - [ ] 5.1 Implement per-tenant Redis token-bucket rate limiter
     - Create `app/services/rate_limiter.py` implementing a sliding-window counter in Redis
     - Default: 10,000 requests per 60-second rolling window; per-tenant override via `tenants.rate_limit_per_hour`
     - Return HTTP 429 with `Retry-After` header (seconds until window reset) when quota exceeded
@@ -127,7 +127,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Validates: Requirements 1.9, 8.4**
 
 - [ ] 6. Tenant Service
-  - [~] 6.1 Implement tenant onboarding and lifecycle management
+  - [ ] 6.1 Implement tenant onboarding and lifecycle management
     - Create `app/services/tenant_service.py` with `create_tenant()`, `approve_tenant()`, `suspend_tenant()`, `deactivate_tenant()`
     - Validate domain uniqueness across all lifecycle states; return `409 DOMAIN_CONFLICT` on duplicate
     - On create: insert tenant in `pending` state, call KMS `create_key()`, store ARN in `tenant_encryption_keys`, generate `client_id`/`client_secret` (bcrypt hash), return credentials
@@ -143,12 +143,12 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 2: Deactivated Tenant Write Rejection**
     - **Validates: Requirements 1.6**
 
-  - [~] 6.4 Implement per-tenant quota and rate limit configuration
+  - [ ] 6.4 Implement per-tenant quota and rate limit configuration
     - Add `PATCH /api/v1/admin/tenants/{id}` endpoint for Super_Admin to set storage quota, rate limit, and allowed schema categories
     - Validate quota range (1 MB–10 TB), rate limit range (1–1,000,000 req/hr), schema categories (≤ 100)
     - _Requirements: 1.7, 1.8_
 
-  - [~] 6.5 Implement API key rotation with grace period
+  - [ ] 6.5 Implement API key rotation with grace period
     - Add `POST /api/v1/admin/tenants/{id}/rotate-key` endpoint
     - On rotation: generate new `client_id`/`client_secret`, set `grace_until = now() + grace_hours`, keep old key valid until grace period expires
     - Validate rotation interval in range [1, 365] days; reject out-of-range values with descriptive error
@@ -162,12 +162,12 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 44: API Key Rotation Interval Validation**
     - **Validates: Requirements 13.9**
 
-- [~] 7. Checkpoint — Ensure all tenant and auth tests pass
+- [ ] 7. Checkpoint — Ensure all tenant and auth tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
 - [ ] 8. Schema Service
-  - [~] 8.1 Implement document schema CRUD with field validation
+  - [ ] 8.1 Implement document schema CRUD with field validation
     - Create `app/services/schema_service.py` with `create_schema()`, `update_schema()`, `deactivate_schema()`
     - Validate each field definition: `name` (non-empty string), `type` (string|number|date|boolean|enumeration|file_reference), `required` (boolean); enumeration fields must have non-empty `allowed_values`
     - Return `422 SCHEMA_INVALID` with field-level errors on invalid definitions
@@ -183,7 +183,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 5: Schema CRUD Namespace Isolation**
     - **Validates: Requirements 2.1, 7.1, 7.2**
 
-  - [~] 8.4 Implement schema version management and breaking-change detection
+  - [ ] 8.4 Implement schema version management and breaking-change detection
     - On update: insert current field_definitions into `schema_versions`, increment version monotonically (new_version = old_version + 1)
     - Run dry-run re-validation of all documents under the current schema version; if any fail, reject with list of conflicting `credential_id` values and `409 SCHEMA_BREAKING_CHANGE`
     - Implement `GET /api/v1/schemas/{id}/versions` to return full version history
@@ -197,7 +197,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 8: Schema Version Monotonic Increment**
     - **Validates: Requirements 2.4**
 
-  - [~] 8.7 Implement schema JSON export endpoint
+  - [ ] 8.7 Implement schema JSON export endpoint
     - Implement `GET /api/v1/schemas/{id}/export` returning JSON with `version`, `field_definitions`, and `created_at`
     - _Requirements: 2.7_
 
@@ -207,7 +207,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
 
 
 - [ ] 9. Encryption Service
-  - [~] 9.1 Implement per-tenant envelope encryption using AWS KMS
+  - [ ] 9.1 Implement per-tenant envelope encryption using AWS KMS
     - Create `app/services/encryption_service.py` implementing `encrypt(tenant_id, plaintext) -> EncryptedPayload` and `decrypt(tenant_id, payload) -> bytes`
     - Per document: generate 256-bit DEK locally, encrypt content with AES-256-GCM (unique IV), encrypt DEK with tenant's CMK via KMS `Encrypt` API
     - Return `EncryptedPayload(encrypted_dek, iv, ciphertext, tenant_cmk_arn)`
@@ -215,7 +215,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - _Requirements: 3.6, 7.3, 13.7_
 
 - [ ] 10. Audit Log Service
-  - [~] 10.1 Implement append-only audit log service
+  - [ ] 10.1 Implement append-only audit log service
     - Create `app/services/audit_log_service.py` with `record(entry: AuditEntry) -> None`
     - Write audit entries within the same PostgreSQL transaction as the originating operation (transactional outbox pattern)
     - Roll back the originating operation if the audit INSERT fails; return `500` with `audit_write_failed` code
@@ -234,7 +234,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 37: Audit Log Write Failure Rejects Originating Operation**
     - **Validates: Requirements 10.7**
 
-  - [~] 10.5 Implement audit log export (JSON and CSV)
+  - [ ] 10.5 Implement audit log export (JSON and CSV)
     - Add `GET /api/v1/audit-logs/export?format=json|csv` endpoint
     - Support up to 100,000 entries; stream response to complete within 60 seconds
     - _Requirements: 10.5_
@@ -243,12 +243,12 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 19: Audit Log Written for Every Document Retrieval**
     - **Validates: Requirements 4.9, 10.1**
 
-- [~] 11. Checkpoint — Ensure all schema, encryption, and audit log tests pass
+- [ ] 11. Checkpoint — Ensure all schema, encryption, and audit log tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
 - [ ] 12. Document Service — single upload, retrieval, and revocation
-  - [~] 12.1 Implement single document upload endpoint
+  - [ ] 12.1 Implement single document upload endpoint
     - Create `app/services/document_service.py` with `upload_document(tenant_id, schema_id, payload, beneficiary_id)`
     - Validate schema exists, belongs to tenant, and is active; validate payload fields against schema (type, required, enum values); validate `beneficiary_id` is non-empty
     - Encrypt content via EncryptionService; store to S3 at `s3://{tenant_id}/{credential_id}`; insert metadata row into `documents`
@@ -271,7 +271,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 3: Quota Enforcement — All Uploads Rejected at Quota**
     - **Validates: Requirements 1.8, 3.7**
 
-  - [~] 12.5 Implement document retrieval and download endpoints
+  - [ ] 12.5 Implement document retrieval and download endpoints
     - Implement `GET /api/v1/documents/{id}` — validate beneficiary identity matches document's `beneficiary_id`; return `403` (indistinguishable from not-found) if mismatch or if document does not exist
     - Implement `GET /api/v1/documents/{id}/download` — decrypt document, generate digitally signed PDF (`reportlab`/`weasyprint`) or JSON-LD (`PyLD`) with embedded `credential_id` and QR code (verification URL); deliver within 10 seconds
     - Implement `GET /api/v1/documents` for Issuer/Tenant_Admin — list with pagination, scoped to tenant namespace
@@ -290,7 +290,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 18: Downloaded Document Contains Credential ID and QR Code**
     - **Validates: Requirements 4.7**
 
-  - [~] 12.9 Implement document revocation endpoint
+  - [ ] 12.9 Implement document revocation endpoint
     - Implement `POST /api/v1/documents/{id}/revoke` — validate Credential_ID belongs to authenticated tenant's namespace; set status to `revoked`, record `revoked_at` (UTC ISO 8601), store `revocation_reason` (1–500 chars)
     - Return `409 ALREADY_REVOKED` if document is already revoked
     - Return `403` if Credential_ID belongs to another tenant namespace
@@ -309,7 +309,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 26: Cross-Tenant Revocation Rejection**
     - **Validates: Requirements 6.4**
 
-  - [~] 12.13 Implement bulk revocation endpoint
+  - [ ] 12.13 Implement bulk revocation endpoint
     - Implement `POST /api/v1/documents/bulk-revoke` — accept up to 1,000 Credential_IDs; process each independently
     - Return per-item result: `revoked`, `already-revoked`, `not-found`, or `unauthorized`
     - Valid revocations proceed even when other items in the batch fail
@@ -321,7 +321,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
 
 
 - [ ] 13. Bulk Upload Pipeline
-  - [~] 13.1 Implement bulk upload API endpoint and job creation
+  - [ ] 13.1 Implement bulk upload API endpoint and job creation
     - Implement `POST /api/v1/documents/bulk` — validate file format (CSV or JSON only) and record count (≤ 10,000) before processing any records; reject entire request immediately with `413 BATCH_TOO_LARGE` or `415 UNSUPPORTED_FORMAT`
     - Insert `bulk_jobs` record (status=pending), enqueue Celery task, return `202 { job_id }` within 5 seconds
     - Implement `GET /api/v1/documents/bulk/{job_id}` — return status (`pending`, `in-progress`, `completed`, `failed`), processed count, failed count
@@ -331,7 +331,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 13: Bulk Upload Size Boundary**
     - **Validates: Requirements 3.8, 3.9**
 
-  - [~] 13.3 Implement Celery worker for bulk record processing
+  - [ ] 13.3 Implement Celery worker for bulk record processing
     - Create `app/tasks/bulk_upload.py` Celery task that processes each record in an independent savepoint
     - Validate each record against schema, encrypt via EncryptionService, store to S3, insert document row, update job progress counter in Redis
     - On completion: write final summary to `bulk_jobs` table; summary must include `total_records`, `success_count`, `failed_count`, list of `credential_id` values for successes, per-record error details (record index, field name, error reason) for failures
@@ -342,12 +342,12 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 14: Bulk Upload Summary Report Completeness**
     - **Validates: Requirements 3.10**
 
-- [~] 14. Checkpoint — Ensure all document service and bulk upload tests pass
+- [ ] 14. Checkpoint — Ensure all document service and bulk upload tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
 - [ ] 15. Verification Service
-  - [~] 15.1 Implement verification token generation
+  - [ ] 15.1 Implement verification token generation
     - Create `app/services/verification_service.py` with `generate_token(beneficiary_id, credential_id, consented_fields, expiry_hours)`
     - Validate credential belongs to authenticated beneficiary; validate `expiry_hours` in range [1, 168] (default 72)
     - Generate 32-byte cryptographically random token (URL-safe base64); store SHA-256 hash in `verification_tokens` with `consented_fields`, `expires_at`, `used_at=null`
@@ -359,7 +359,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 20: Verification Token Expiry Bound**
     - **Validates: Requirements 5.1, 5.3**
 
-  - [~] 15.3 Implement verification token consumption endpoint
+  - [ ] 15.3 Implement verification token consumption endpoint
     - Implement `GET /api/v1/verifications/{token}` — compute SHA-256 of submitted token, look up hash
     - Validate: not found → `410 TOKEN_INVALID`; `used_at IS NOT NULL` → `410 TOKEN_USED`; `expires_at < now()` → `401 OTP_EXPIRED` (token-expired); else mark `used_at = now()` atomically
     - Return `{ valid: true, issuer_name, issued_at, fields: { only consented_fields } }`; if consented_fields is empty, return only validity status and issuer name
@@ -375,7 +375,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 22: Invalid/Used/Expired Token — No Document Data Leakage**
     - **Validates: Requirements 5.3, 5.4, 5.5**
 
-  - [~] 15.6 Implement public verification endpoints
+  - [ ] 15.6 Implement public verification endpoints
     - Implement `GET /api/v1/verify/{credential_id}` (unauthenticated) — return only validity status (`valid`, `invalid`, or `revoked`); no document fields, no beneficiary details
     - Implement `GET /api/v1/verify/qr/{token}` (public HTML page) — display validity status, issuing tenant name, and beneficiary-consented fields; no Verifier authentication required
     - _Requirements: 5.6, 5.7, 5.10_
@@ -386,7 +386,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
 
 
 - [ ] 16. Search Service
-  - [~] 16.1 Implement per-tenant document search API
+  - [ ] 16.1 Implement per-tenant document search API
     - Create `app/services/search_service.py` using PostgreSQL `pg_trgm` + GIN indexes for full-text and faceted search
     - Support filters: beneficiary ID (full-text), schema type, status, `issued_after`, `issued_before`; sorting by issuance date, status, schema type (ascending/descending); pagination (1–100 per page, default 20)
     - Validate date range filter: reject with `422 INVALID_DATE_RANGE` if `start_date > end_date`
@@ -408,7 +408,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Validates: Requirements 9.7**
 
 - [ ] 17. Notification Service
-  - [~] 17.1 Implement event-driven notification delivery
+  - [ ] 17.1 Implement event-driven notification delivery
     - Create `app/services/notification_service.py` with pluggable adapters for AWS SES (email) and AWS SNS (SMS)
     - Before sending, check `beneficiary_notification_preferences` for enabled event types and preferred channel; skip and log `skipped-notification` audit entry if disabled or no contact on file
     - Implement Celery retry policy: up to 3 retries at 30s, 60s, 120s exponential backoff (`max_retries=3`, `countdown` sequence); write final delivery status (delivered/permanently_failed) to `notification_log` and audit log
@@ -419,17 +419,17 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Property 38: Notification Preference Enforcement**
     - **Validates: Requirements 11.4_
 
-  - [~] 17.3 Implement notification preference management endpoints
+  - [ ] 17.3 Implement notification preference management endpoints
     - Implement `GET /api/v1/beneficiaries/me/notification-preferences` and `PATCH /api/v1/beneficiaries/me/notification-preferences`
     - Allow beneficiaries to enable/disable each event type (issuance, revocation, verification) and select preferred channel (email or SMS)
     - _Requirements: 11.4_
 
-- [~] 18. Checkpoint — Ensure all verification, search, and notification tests pass
+- [ ] 18. Checkpoint — Ensure all verification, search, and notification tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 
 - [ ] 19. Webhook Service
-  - [~] 19.1 Implement webhook registry and event delivery
+  - [ ] 19.1 Implement webhook registry and event delivery
     - Create `app/services/webhook_service.py` with webhook registration CRUD for tenants
     - On qualifying events (document uploaded, revoked, verified): look up active webhooks for tenant, serialize event payload as JSON, compute `HMAC-SHA256(webhook_secret, payload_bytes)` and include in `X-Webhook-Signature` header
     - Implement Celery retry task: first retry 5–10s after initial failure, each subsequent retry doubles the interval, max 3 retries
@@ -445,7 +445,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - **Validates: Requirements 8.8, 8.9**
 
 - [ ] 20. DigiLocker Connector
-  - [~] 20.1 Implement DigiLocker async push with retry logic
+  - [ ] 20.1 Implement DigiLocker async push with retry logic
     - Create `app/services/digilocker_connector.py` implementing DigiLocker issuer API (OAuth 2.0 authorization code flow)
     - On document issuance with connector enabled: enqueue push task within 10 seconds
     - Celery task: attempt push; on failure retry up to 5 times at minimum 60s intervals (`countdown=60, max_retries=5`)
@@ -456,7 +456,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6_
 
 - [ ] 21. Malware Scanning
-  - [~] 21.1 Implement file malware scan integration
+  - [ ] 21.1 Implement file malware scan integration
     - Create `app/services/malware_scanner.py` with `scan(file_content: bytes) -> ScanResult`
     - Integrate ClamAV sidecar (via `clamd` library) or AWS GuardDuty file scan
     - Reject uploaded files that fail the scan with a reason-included error response; guarantee no rejected file content is persisted
@@ -465,25 +465,25 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - _Requirements: 13.5_
 
 - [ ] 22. Anomalous Access Detection
-  - [~] 22.1 Implement anomalous access pattern detection and alerting
+  - [ ] 22.1 Implement anomalous access pattern detection and alerting
     - Create `app/tasks/anomaly_detection.py` Celery periodic task (runs every minute)
     - Track document retrievals per identity using a Redis sliding-window counter (10-minute window)
     - When threshold of 500 retrievals is exceeded: generate alert to Tenant_Admin within 5 minutes of threshold crossing (via notification service), write alert entry to audit log
     - _Requirements: 10.6_
 
 - [ ] 23. OpenAPI specification
-  - [~] 23.1 Configure and expose OpenAPI 3.0 specification
+  - [ ] 23.1 Configure and expose OpenAPI 3.0 specification
     - Configure FastAPI to generate OpenAPI 3.0 spec at `/api/v1/openapi.json` covering all endpoints with parameters, request schemas, and response schemas
     - Add response model annotations to all endpoints for complete schema coverage
     - Wire OpenAPI spec update into the deployment pipeline so it stays current within one deployment cycle
     - _Requirements: 8.5_
 
-- [~] 24. Checkpoint — Ensure all service tests pass end-to-end
+- [ ] 24. Checkpoint — Ensure all service tests pass end-to-end
   - Ensure all tests pass, ask the user if questions arise.
 
 
 - [ ] 25. Property test infrastructure and Hypothesis strategies
-  - [~] 25.1 Set up Hypothesis configuration and shared test strategies
+  - [ ] 25.1 Set up Hypothesis configuration and shared test strategies
     - Create `tests/property/conftest.py` with Hypothesis settings profile `ci` (`max_examples=100`, `suppress_health_check=[HealthCheck.too_slow]`)
     - Implement reusable Hypothesis strategies in `tests/property/strategies.py`: `tenant_namespaces`, `field_definitions`, `valid_document_payload`, `role_operation_pairs`, `jwt_claims`, `token_strings`
     - _Requirements: (testing infrastructure)_
@@ -523,7 +523,7 @@ Implement the platform incrementally using Python 3.12 / FastAPI, PostgreSQL 16 
     - Create `tests/smoke/test_deployment_smoke.py` — verify all `/api/v1/` endpoints respond, OpenAPI spec is valid OpenAPI 3.0, KMS keys exist and enabled per tenant, RLS policies active on all tables, audit log retention ≥ 7 years, AES-256 at rest + TLS 1.2+ in transit
     - _Requirements: 3.6, 7.1, 7.3, 8.1, 8.5, 10.4, 13.7_
 
-- [~] 27. Final checkpoint — Full test suite passes
+- [ ] 27. Final checkpoint — Full test suite passes
   - Ensure all tests pass, ask the user if questions arise.
 
 

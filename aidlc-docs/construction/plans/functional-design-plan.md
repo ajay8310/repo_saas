@@ -9,11 +9,11 @@ Please answer the questions, then tell me you're done. I'll resolve ambiguities,
 generate the functional-design artifacts per unit.
 
 ## Methodology / Execution Checklist (run after approval)
-- [ ] U1: business-logic-model.md, business-rules.md, domain-entities.md, frontend-components.md
-- [ ] U2: business-logic-model.md, business-rules.md, domain-entities.md, frontend-components.md
-- [ ] U3: business-logic-model.md, business-rules.md, domain-entities.md, frontend-components.md
-- [ ] Each unit: "Testable Properties" section (PBT-01) identifying property categories
-- [ ] Validate against requirements FR-1..FR-7 and stories S1-S15
+- [x] U1: business-logic-model.md, business-rules.md, domain-entities.md, frontend-components.md
+- [x] U2: business-logic-model.md, business-rules.md, domain-entities.md, frontend-components.md
+- [x] U3: business-logic-model.md, business-rules.md, domain-entities.md, frontend-components.md
+- [x] Each unit: "Testable Properties" section (PBT-01) identifying property categories
+- [x] Validate against requirements FR-1..FR-7 and stories S1-S15
 
 ## Known design inputs (already decided — for reference, not re-asked)
 - Hybrid: each assertion also creates a linked `documents` row. Private-by-default public exposure.

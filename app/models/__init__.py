@@ -7,6 +7,12 @@ Usage:
 
 from app.models.anchor import AnchorBatch, DocumentAnchor  # noqa: F401
 from app.models.audit import AuditLog  # noqa: F401
+from app.models.badge import (  # noqa: F401
+    BadgeAnalyticsDaily,
+    BadgeAssertion,
+    BadgeClass,
+    BadgeEvent,
+)
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin  # noqa: F401
 from app.models.consent import ConsentRecord, ErasureRequest  # noqa: F401
 from app.models.digilocker import DigiLockerPush  # noqa: F401

@@ -66,7 +66,15 @@ will be enforced in Design/Construction; Security rules skipped per user opt-out
 - [x] Application Design (5 artifacts, APPROVED)
 - [x] Units Generation (3 units U1-U3, artifacts generated, awaiting approval)
 ### 🟢 CONSTRUCTION PHASE (design-all-then-code; U1→U2→U3)
-- [~] Functional Design - IN PROGRESS (all-units plan + questions posted)
+- [x] Functional Design - COMPLETE for U1, U2, U3 (APPROVED)
+- [x] NFR Requirements - COMPLETE (APPROVED). Key: partition badge_assertions/events from start (Q2=B); PBT framework=Hypothesis (PBT-09).
+- [x] NFR Design - COMPLETE (APPROVED). Partition RANGE(issued_at); targeted cache invalidation; per-IP throttle; idempotent aggregation; lightweight IR proposed; DR test scenarios captured.
+- [x] Infrastructure Design - COMPLETE (infrastructure-design.md, deployment-architecture.md, shared-infrastructure.md; awaiting approval). Reuse existing stack + separate public-gateway container (Q3=B); new S3 prefix; presigned image URLs; beat schedule entry.
+### ALL DESIGN STAGES COMPLETE for U1/U2/U3
+- [x] Code Generation U1 (Badge Core) — Part 1 plan approved; Part 2 all 17 steps complete. Verified: app imports OK, 18 tests pass (13 unit + 5 property), frontend tsc clean. Migration 005 written, application deferred to Build & Test. Awaiting user approval to proceed to U2 code gen.
+- [ ] Code Generation U2 (Wallet) — next.
+- [ ] Code Generation U3 (Public + Analytics) — after U2.
+- [ ] Build and Test — after all units.
 - [ ] NFR Requirements - EXECUTE
 - [ ] NFR Design - EXECUTE
 - [ ] Infrastructure Design - EXECUTE

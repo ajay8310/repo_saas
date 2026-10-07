@@ -145,3 +145,65 @@ request_counts = st.integers(min_value=1, max_value=20000)
 # ---------------------------------------------------------------------------
 
 uuids = st.builds(uuid4)
+
+# ---------------------------------------------------------------------------
+# Badge strategies (U1 Badge Core — PBT-07)
+# ---------------------------------------------------------------------------
+
+badge_names = st.text(min_size=1, max_size=255, alphabet=string.printable).filter(
+    lambda s: s.strip() != ""
+)
+
+badge_descriptions = st.one_of(st.none(), st.text(min_size=0, max_size=2000))
+
+# Recipient identities (email-like or opaque subject ids).
+recipient_identities = st.text(
+    min_size=1, max_size=320, alphabet=string.ascii_letters + string.digits + "@._-+"
+)
+
+recipient_salts = st.text(
+    min_size=1, max_size=64, alphabet=string.hexdigits.lower()
+)
+
+# null => non-expiring badge; positive int => fixed-period (Q2=C).
+validity_days = st.one_of(st.none(), st.integers(min_value=1, max_value=3650))
+
+# Certificate template names (U4 — PBT-07).
+certificate_templates = st.sampled_from(["classic", "modern", "elegant", "minimal"])
+
+# Arbitrary JSON-serialisable signing payloads for issuer-signature properties.
+signing_payloads = st.dictionaries(
+    keys=st.text(min_size=1, max_size=20, alphabet=string.ascii_letters + "_"),
+    values=st.one_of(
+        st.text(max_size=50),
+        st.integers(min_value=-(10**6), max_value=10**6),
+        st.booleans(),
+    ),
+    min_size=0,
+    max_size=8,
+)
+
+badge_tags = st.lists(
+    st.text(min_size=1, max_size=40, alphabet=string.ascii_letters + string.digits + " -_"),
+    min_size=0,
+    max_size=10,
+)
+
+badge_event_types = st.sampled_from(
+    ["issued", "accepted", "published", "shared", "verified", "viewed", "revoked"]
+)
+
+# ---------------------------------------------------------------------------
+# Wallet strategies (U2 — PBT-03/07)
+# ---------------------------------------------------------------------------
+
+assertion_statuses = st.sampled_from(["active", "revoked", "expired"])
+
+# Arbitrary combinations of the three earner-controlled flags.
+wallet_flag_combos = st.fixed_dictionaries(
+    {
+        "accepted": st.booleans(),
+        "hidden": st.booleans(),
+        "public": st.booleans(),
+    }
+)

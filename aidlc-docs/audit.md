@@ -201,3 +201,218 @@
 **Context**: CONSTRUCTION - Functional Design (answers)
 
 ---
+
+## Functional Design — Complete (all units)
+**Timestamp**: 2026-09-03T04:35:00Z
+**AI Response**: Generated functional-design artifacts for U1 (badge-core), U2 (wallet), U3 (public-analytics): business-logic-model.md, business-rules.md, domain-entities.md, frontend-components.md each, with PBT-01 Testable Properties sections. Decisions applied: Q1=B credential_id-keyed assertions, Q2=C dual expiry, Q3=A OB-compliant revoked 200, Q4=B delete forces public=false, Q5=A masked earner identity, Q6=A ~2min aggregation, Q7=A uniform 404. PBT Compliance: PBT-01 satisfied (properties identified per unit). Resiliency: N/A at this stage (design-time targets already captured in requirements; addressed in NFR/Infra Design). Updated plan + state.
+**Context**: CONSTRUCTION - Functional Design complete
+**Approval Prompt**: "Request Changes / Continue to Next Stage (NFR Requirements)"
+
+---
+
+## Functional Design — Approval
+**Timestamp**: 2026-09-03T04:45:00Z
+**User Input**: "Continue to Next Stage"
+**AI Response**: Functional design approved for all units. Proceeding to NFR Requirements.
+**Context**: CONSTRUCTION - Functional Design approval
+
+---
+
+## NFR Requirements — Plan (all units)
+**Timestamp**: 2026-09-03T04:55:00Z
+**AI Response**: Created construction/plans/nfr-requirements-plan.md. Recorded inherited decisions (reuse existing stack; PBT framework=Hypothesis per PBT-09; DR/topology from requirements). 5 questions: performance targets, 10M+ scale realization (index+keyset vs partition), public-endpoint abuse protection, caching, accessibility level. Awaiting answers.
+**Context**: CONSTRUCTION - NFR Requirements (plan)
+
+---
+
+## NFR Requirements — Answers
+**Timestamp**: 2026-09-03T05:05:00Z
+**User Input**: "Check now" (nfr-requirements-plan.md: Q1=A stated targets, Q2=B partition badge_assertions from start, Q3=A rate limiter + per-IP throttle, Q4=A short-TTL Redis cache w/ invalidation, Q5=A WCAG 2.1 AA)
+**AI Response**: Parsed, no contradictions. Q2=B (partition from start) flagged: requires a concrete partition-key strategy in NFR Design; interacts with RLS + composite PK (like audit_logs pattern) + the id==credential_id link to documents. Generating nfr-requirements.md and tech-stack-decisions.md (PBT-09: Hypothesis).
+**Context**: CONSTRUCTION - NFR Requirements (answers)
+
+---
+
+## NFR Requirements — Complete
+**Timestamp**: 2026-09-03T05:15:00Z
+**AI Response**: Generated nfr-requirements.md (SCALE/PERF/AVAIL/SEC/REL/MAINT/UX) and tech-stack-decisions.md. Decisions: keep targets (500ms/1s), partition badge_assertions+badge_events from start (Q2=B, candidate RANGE by issued_at like audit_logs, composite PK), per-IP throttle on public routes, short-TTL Redis cache w/ invalidation, WCAG 2.1 AA. PBT-09 recorded: Hypothesis. No new backend/frontend frameworks. Resiliency compliance: RESILIENCY-01/02/08/15 addressed at requirement level; DR/topology captured; IR proposal deferred to NFR Design. Updated plan + state.
+**Context**: CONSTRUCTION - NFR Requirements complete
+**Approval Prompt**: "Request Changes / Continue to Next Stage (NFR Design)"
+
+---
+
+## NFR Requirements — Approval
+**Timestamp**: 2026-09-03T05:25:00Z
+**User Input**: "Continue to Next Stage"
+**AI Response**: NFR requirements approved. Proceeding to NFR Design.
+**Context**: CONSTRUCTION - NFR Requirements approval
+
+---
+
+## NFR Design — Plan (all units)
+**Timestamp**: 2026-09-03T05:35:00Z
+**AI Response**: Created construction/plans/nfr-design-plan.md. 5 questions: partition key (RANGE issued_at vs HASH tenant), composite-PK + unique-id approach, cache invalidation granularity, RESILIENCY-15 incident response, RESILIENCY-14 resiliency testing approach. Awaiting answers.
+**Context**: CONSTRUCTION - NFR Design (plan)
+
+---
+
+## NFR Design — Answers (delegated to AI)
+**Timestamp**: 2026-09-03T05:45:00Z
+**User Input**: "Use your best judgement and do it"
+**AI Response**: User delegated NFR Design decisions. Applied: Q1=A RANGE by issued_at monthly partition; Q2=A composite PK (id, issued_at) + UNIQUE index on id; Q3=A targeted cache invalidation; Q4=A propose lightweight IR+COE (RESILIENCY-15); Q5=A DR test checklist now, execute in Operations (RESILIENCY-14). Recorded into plan. Generating nfr-design-patterns.md and logical-components.md.
+**Context**: CONSTRUCTION - NFR Design (answers, delegated)
+
+---
+
+## NFR Design — Complete
+**Timestamp**: 2026-09-03T05:55:00Z
+**AI Response**: Generated nfr-design-patterns.md and logical-components.md. Partitioning (RANGE issued_at monthly, composite PK + UNIQUE id), keyset pagination, index plan, Redis short-TTL cache with targeted+versioned invalidation, per-IP throttle for public routes, idempotent watermark-driven aggregation, resilience/degradation patterns, Backup&Restore coverage, proposed lightweight IR+COE (RESILIENCY-15), DR test scenarios captured for Operations (RESILIENCY-14), WCAG 2.1 AA approach. Resiliency Compliance: RESILIENCY-01/02/05/06/08/10/11/12/15 addressed or reused; RESILIENCY-14 captured for Operations; multi-region N/A (single-region MZ by user choice). Updated plan + state.
+**Context**: CONSTRUCTION - NFR Design complete
+**Approval Prompt**: "Request Changes / Continue to Next Stage (Infrastructure Design)"
+
+---
+
+## NFR Design — Approval
+**Timestamp**: 2026-09-03T06:05:00Z
+**User Input**: "Continue to Next Stage"
+**AI Response**: NFR design approved. Proceeding to Infrastructure Design.
+**Context**: CONSTRUCTION - NFR Design approval
+
+---
+
+## Infrastructure Design — Plan (all units)
+**Timestamp**: 2026-09-03T06:15:00Z
+**AI Response**: Created construction/plans/infrastructure-design-plan.md. Mostly reuse of existing stack (compute, PG, Redis, S3, KMS, Celery, ingress). 4 questions: badge image S3 location, aggregator beat schedule registration, public route exposure (existing api vs separate gateway), public image serving (presigned vs proxy). Awaiting answers or delegation.
+**Context**: CONSTRUCTION - Infrastructure Design (plan)
+
+---
+
+## Infrastructure Design — Answers
+**Timestamp**: 2026-09-03T06:25:00Z
+**User Input**: "Done" (infrastructure-design-plan.md: Q1=A new S3 prefix existing bucket, Q2=A existing beat schedule, Q3=B separate public gateway, Q4=A presigned URLs)
+**AI Response**: Parsed, no contradictions. Q3=B: design a separate public gateway container (same image, public router only, own ingress, read-mostly, reaches PG/Redis) for the unauthenticated surface — isolation with a documented added-infra trade-off. Generating infrastructure-design.md, deployment-architecture.md, shared-infrastructure.md.
+**Context**: CONSTRUCTION - Infrastructure Design (answers)
+
+---
+
+## Infrastructure Design — Complete
+**Timestamp**: 2026-09-03T06:35:00Z
+**AI Response**: Generated infrastructure-design.md, deployment-architecture.md, shared-infrastructure.md. Reuse existing compute/PG/Redis/S3/KMS/ClamAV/Celery; add a separate `public-gateway` container (same image, public router only, per-IP throttle, reaches PG/Redis/S3) per Q3=B; badge images in new S3 prefix (versioned); presigned URLs for public images; aggregation added to beat; migration 005 with partitions. Deployment topology diagram + config keys + rollback note included. Resiliency: Backup&Restore coverage confirmed; DR tests captured for Operations. This completes ALL design stages for U1/U2/U3. Updated plan + state.
+**Context**: CONSTRUCTION - Infrastructure Design complete
+**Approval Prompt**: "Request Changes / Continue to Next Stage (Code Generation)"
+
+---
+
+## Infrastructure Design — Approval
+**Timestamp**: 2026-09-03T06:45:00Z
+**User Input**: "Continue to Next Stage"
+**AI Response**: Infrastructure design approved. All design stages complete. Proceeding to Code Generation.
+**Context**: CONSTRUCTION - Infrastructure Design approval → Code Generation
+
+---
+
+## Code Generation — U1 Plan (Part 1)
+**Timestamp**: 2026-09-03T06:55:00Z
+**AI Response**: Created construction/plans/U1-badge-core-code-generation-plan.md — 17 numbered, checkboxed steps: models+partitioned migration (005_badges.py), OpenBadgesSerializer, BadgeEventService, BadgeService, IssuanceService (single/bulk/revoke), bulk Celery task, badges router (auth) + public_badges router (unauth), RBAC perms, unit + property tests (PBT-02/03/07 via Hypothesis), BadgeClasses frontend, config keys, code summary. Story traceability S1-S6,S13 mapped. Reference to plan as single source of truth.
+**Context**: CONSTRUCTION - Code Generation U1 (Part 1 Planning)
+**Approval Prompt**: "Approve the U1 code generation plan to begin generation? (Request Changes / Approve)"
+
+---
+
+## Code Generation — U1 Approved / Generation Start
+**Timestamp**: 2026-09-03T07:05:00Z
+**User Input**: "Approve"
+**AI Response**: U1 code generation plan approved. Beginning Part 2 generation (Steps 1-17).
+**Context**: CONSTRUCTION - Code Generation U1 (Part 2)
+
+---
+
+## Code Generation — U1 Generation Complete (Part 2)
+**Timestamp**: 2026-09-03T08:10:00Z
+**AI Response**: Completed all 17 steps of the U1 code generation plan. Created badge.py models, 005_badges.py migration (partitioned + RLS), OpenBadgesSerializer, BadgeEventService, BadgeService, IssuanceService, PublicBadgeService, bulk_issue_badges Celery task, badges + public_badges routers, RBAC perms, config keys, unit + property tests, badges frontend page + api client + routing/nav, and code summary. Verified: full app IMPORTS_OK in API container; 18 tests passed (13 unit + 5 property); frontend tsc CLEAN_NO_ERRORS. Migration application deferred to Build & Test. Stories S1-S6, S13 implemented.
+**Context**: CONSTRUCTION - Code Generation U1 (Part 2 complete)
+**Approval Prompt**: "U1 Badge Core code generation complete. Request Changes or Continue to Next Stage (U2 Wallet code generation)?"
+
+---
+
+## Code Generation — U1 Approved
+**Timestamp**: 2026-09-03T08:20:00Z
+**User Input**: "continue to next stage"
+**AI Response**: U1 Badge Core code generation approved. Proceeding to U2 Wallet code generation (Part 1 Planning).
+**Context**: CONSTRUCTION - Code Generation U1 approved → U2 planning
+
+---
+
+## Code Generation — U2 Plan (Part 1)
+**Timestamp**: 2026-09-03T08:30:00Z
+**AI Response**: Created construction/plans/U2-wallet-code-generation-plan.md — 8 numbered, checkboxed steps: WalletService (list/hide/unhide/delete-from-wallet/set_public), wallet router (auth beneficiary), RBAC wallet perms, unit + property tests (PBT-03/07), WalletPage + WalletBadgeCard frontend + wallet api client, code summary. No migration (U2 adds no tables — reuses U1 badge_assertions flags). Story traceability S7,S9-S12. Plan is single source of truth.
+**Context**: CONSTRUCTION - Code Generation U2 (Part 1 Planning)
+**Approval Prompt**: "Approve the U2 Wallet code generation plan to begin generation? (Request Changes / Approve)"
+
+---
+
+## Code Generation — U2 Plan Approved, Begin Generation
+**Timestamp**: 2026-09-03T08:45:00Z
+**User Input**: "Approve & Continue"
+**AI Response**: U2 Wallet code generation plan approved. Beginning Part 2 (Generation) — executing steps 1-8.
+**Context**: CONSTRUCTION - Code Generation U2 (Part 2 Generation)
+
+---
+
+## New Feature Request — Certificates & Issuer Signing (U4)
+**Timestamp**: 2026-09-03T10:30:00Z
+**User Input**: "Entire certificate should also be downloadable and issuer should be able to choose a template for certificate." + "Yes, also add photo of the student in QR and on certificate so that certificate authenticity can be verified. The certificate will be digitally signed by the issuer." + "yes" (confirmed Q1-Q8=A)
+**AI Response**: Scoped as new unit U4 — Certificates & Issuer Signing. Confirmed decisions:
+- Q1=A built-in template set (classic/modern/elegant/minimal), no custom HTML.
+- Q2=A template chosen per badge_class (template_id column).
+- Q3=A PDF only.
+- Q4=A downloadable by earner (wallet) + issuer (badge admin).
+- Q5=A full content: badge name, recipient, issuer, dates, criteria, badge image, student photo, QR to public verify page; revoked watermark.
+- Q6=A recipient photo uploaded per assertion, stored in S3, malware-scanned, presigned URL.
+- Q7=A per-tenant RS256 issuer signing keypair; cert signed with issuer key; public key published at hosted issuer endpoint.
+- Q8=A student photo shown on public verification page only when assertion is public.
+Clarified to user: a QR cannot physically carry a photo; QR links to the public verify page which displays the same photo live (tamper-evident). Will also finish U2 wallet frontend alongside U4.
+**Context**: CONSTRUCTION - new unit U4 scoping
+
+---
+
+## Code Generation — U4 Plan (Part 1)
+**Timestamp**: 2026-09-03T10:40:00Z
+**AI Response**: Created construction/plans/U4-certificates-code-generation-plan.md — 16 steps: migration 006 (certificate_template on badge_classes, recipient_photo_s3_key on badge_assertions, issuer signing key columns on tenants), IssuerSigningService (per-tenant RS256), certificate_renderer (4 templates: classic/modern/elegant/minimal, embeds student photo + badge image + QR), CertificateService (build+photo upload), issuer/wallet/public routes, RBAC, config, unit + property tests, frontend template picker + photo upload + download, summary. Will also complete the pending U2 wallet frontend as part of Step 15.
+**Context**: CONSTRUCTION - Code Generation U4 (Part 1 Planning)
+**Approval Prompt**: "Approve the U4 Certificates & Issuer Signing plan to begin generation? (Request Changes / Approve)"
+
+---
+
+## Code Generation — U4 Plan Approved, Begin Generation
+**Timestamp**: 2026-09-03T10:50:00Z
+**User Input**: "approved"
+**AI Response**: U4 plan approved. Executing steps 1-16.
+**Context**: CONSTRUCTION - Code Generation U4 (Part 2 Generation)
+
+---
+
+## Code Generation — U4 Generation Complete
+**Timestamp**: 2026-09-03T11:30:00Z
+**AI Response**: Completed all 16 U4 steps. Migration 006 (certificate_template, recipient_photo_s3_key, issuer signing columns), IssuerSigningService, certificate_renderer (4 templates embedding student photo + badge image + QR), CertificateService, issuer/wallet/public routes, RBAC, config, 16 tests (10 renderer + 3 signing + 3 property), frontend (wallet.ts, WalletPage with cert download, badges template picker, routing/nav), summary. Verified: app import RC=0; 16 tests passed; frontend tsc CLEAN_NO_ERRORS; migration 006 upgrade→downgrade→upgrade reversible (now 006 head); API restarted, cert routes present in live OpenAPI. Also delivered the pending U2 wallet frontend. Fixed along the way: missing Response/certificate imports in badges.py (hook reformats dropped them), 204 route needs response_class=Response, ToastKind lacks 'info'.
+**Context**: CONSTRUCTION - Code Generation U4 complete; U2 wallet frontend also delivered
+**Approval Prompt**: "U4 Certificates & Issuer Signing complete and live. Test at http://localhost:3000. Request Changes or Continue?"
+
+---
+
+## Code Generation — U3 Plan (Part 1)
+**Timestamp**: 2026-09-03T11:45:00Z
+**User Input**: "continue with U3"
+**AI Response**: Created construction/plans/U3-public-analytics-code-generation-plan.md — 16 steps: migration 007 (badge_analytics_daily + RLS), ShareService, DirectoryService, AnalyticsService (read models), AnalyticsAggregator (idempotent upsert, tenant-wide=sum), aggregate_badge_analytics Celery task (beat 120s), public directory/profile/share routes + analytics auth routes, RBAC badge:analytics, config, unit + property tests (share round-trip, only-public, idempotence), frontend directory/analytics clients + DirectoryPage + BadgeAnalyticsPage + share buttons, summary. Reuses U1 public router/service/events. Stories S12/S14/S15.
+**Context**: CONSTRUCTION - Code Generation U3 (Part 1 Planning)
+**Approval Prompt**: "Approve the U3 Public Directory + Analytics plan to begin generation? (Request Changes / Approve)"
+
+---
+
+## Code Generation — U3 Plan Approved, Begin Generation
+**Timestamp**: 2026-09-03T11:55:00Z
+**User Input**: "Appoved"
+**AI Response**: U3 plan approved. Executing steps 1-16.
+**Context**: CONSTRUCTION - Code Generation U3 (Part 2 Generation)
+
+---

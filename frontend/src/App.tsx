@@ -7,10 +7,12 @@ import DashboardPage from './pages/DashboardPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
 import TenantsPage from './pages/admin/TenantsPage'
 import SchemasPage from './pages/tenant/SchemasPage'
+import BadgeClassesPage from './pages/tenant/BadgeClassesPage'
 import DocumentsPage from './pages/tenant/DocumentsPage'
 import AuditLogsPage from './pages/tenant/AuditLogsPage'
 import WebhooksPage from './pages/tenant/WebhooksPage'
 import MyDocumentsPage from './pages/beneficiary/MyDocumentsPage'
+import WalletPage from './pages/beneficiary/WalletPage'
 import NotificationsPage from './pages/beneficiary/NotificationsPage'
 import VerifyPage from './pages/public/VerifyPage'
 import LandingPage from './pages/public/LandingPage'
@@ -79,6 +81,14 @@ export default function App() {
           }
         />
         <Route
+          path="badges"
+          element={
+            <ProtectedRoute requiredRoles={ISSUING_ROLES}>
+              <BadgeClassesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="audit-logs"
           element={
             <ProtectedRoute requiredRoles={ADMIN_ROLES}>
@@ -99,6 +109,14 @@ export default function App() {
           element={
             <ProtectedRoute requiredRoles={['beneficiary']}>
               <MyDocumentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="wallet"
+          element={
+            <ProtectedRoute requiredRoles={['beneficiary']}>
+              <WalletPage />
             </ProtectedRoute>
           }
         />

@@ -39,6 +39,8 @@ def get_celery_app() -> Celery:
         # Task autodiscovery
         include=[
             "app.tasks.bulk_upload",
+            "app.tasks.badge_bulk",
+            "app.tasks.badge_analytics",
             "app.tasks.notifications",
             "app.tasks.webhooks",
             "app.tasks.anomaly_detection",
@@ -81,6 +83,13 @@ def get_celery_app() -> Celery:
             "anchor-batch": {
                 "task": "app.tasks.anchoring.anchor_pending_batch",
                 "schedule": 600.0,
+            },
+            # Rolls badge_events into the daily analytics table (U3, Q6=A).
+            "badge-analytics-aggregation": {
+                "task": "app.tasks.badge_analytics.aggregate_badge_analytics",
+                "schedule": float(
+                    settings.analytics_aggregation_interval_seconds
+                ),
             },
         },
     )

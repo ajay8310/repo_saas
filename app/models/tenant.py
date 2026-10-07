@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,6 +28,20 @@ class Tenant(Base, UUIDPrimaryKeyMixin):
     rate_limit_per_hour: Mapped[int] = mapped_column(Integer, nullable=False, server_default="10000")
     retention_years: Mapped[int] = mapped_column(Integer, nullable=False, server_default="7")
     dedicated_db: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Open Badges issuer profile (used in hosted assertion/issuer JSON).
+    issuer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    issuer_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    issuer_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Per-tenant RS256 certificate signing keypair (U4). The private key is
+    # sealed via the vault path when PII encryption is enabled, else stored as
+    # PEM text (same posture as the platform JWT keys). The public key is
+    # published at the hosted issuer endpoint so verifiers can check signatures.
+    issuer_signing_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issuer_signing_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issuer_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    issuer_key_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
