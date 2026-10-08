@@ -155,6 +155,7 @@ def _draw_revoked(pdf, width, height) -> None:
 
 
 def _draw_signature_footer(pdf, ctx: CertificateContext, x, y) -> None:
+    """Legacy thin footer (kept for callers that want a one-liner)."""
     from reportlab.lib import colors
 
     pdf.setFont("Helvetica", 8)
@@ -163,6 +164,69 @@ def _draw_signature_footer(pdf, ctx: CertificateContext, x, y) -> None:
     pdf.setFont("Courier", 6)
     pdf.setFillColor(colors.HexColor("#9ca3af"))
     pdf.drawString(x, y, f"signature: {ctx.signature_jws[:72]}...")
+
+
+def _short_sig(jws: str) -> str:
+    """A readable fingerprint of the signature (last segment is the sig part)."""
+    seg = jws.rsplit(".", 1)[-1]
+    cleaned = seg.replace("-", "").replace("_", "")
+    return cleaned[:32].upper() if cleaned else "n/a"
+
+
+def _draw_verification_panel(pdf, ctx: CertificateContext, x, y, w) -> None:
+    """A clearly visible verification panel: QR + digital-signature details.
+
+    Drawn as a bordered box so the recipient and any verifier can see at a
+    glance that the certificate is digitally signed and how to verify it.
+    ``(x, y)`` is the bottom-left; ``w`` is the panel width.
+    """
+    from reportlab.lib import colors
+
+    mm = _mm()
+    h = 40 * mm
+    qr_size = 32 * mm
+
+    # Panel background + border.
+    pdf.saveState()
+    pdf.setFillColor(colors.HexColor("#f8fafc"))
+    pdf.setStrokeColor(colors.HexColor("#1e3a8a"))
+    pdf.setLineWidth(1)
+    pdf.roundRect(x, y, w, h, 4, stroke=1, fill=1)
+    pdf.restoreState()
+
+    pad = 5 * mm
+    qr_x = x + pad
+    qr_y = y + (h - qr_size) / 2
+    pdf.drawImage(
+        _image_reader(_qr_png(ctx.verify_url)), qr_x, qr_y, width=qr_size, height=qr_size
+    )
+    pdf.setFont("Helvetica", 6.5)
+    pdf.setFillColor(colors.HexColor("#475569"))
+    pdf.drawCentredString(qr_x + qr_size / 2, qr_y - 3.5 * mm, "Scan to verify")
+
+    # Text column to the right of the QR.
+    tx = qr_x + qr_size + pad
+    ty = y + h - 8 * mm
+
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.setFillColor(colors.HexColor("#166534"))
+    # A check mark + statement so the signature is unmistakable.
+    pdf.drawString(tx, ty, "\u2714  Digitally signed & verifiable")
+
+    pdf.setFont("Helvetica", 8.5)
+    pdf.setFillColor(colors.HexColor("#334155"))
+    pdf.drawString(tx, ty - 7 * mm, f"Issuer: {ctx.issuer_name}")
+
+    pdf.setFont("Helvetica", 7.5)
+    pdf.setFillColor(colors.HexColor("#64748b"))
+    pdf.drawString(tx, ty - 12.5 * mm, "Verify at:")
+    pdf.setFont("Helvetica-Bold", 7.5)
+    pdf.setFillColor(colors.HexColor("#1e3a8a"))
+    pdf.drawString(tx, ty - 16.5 * mm, _truncate(ctx.verify_url, 62))
+
+    pdf.setFont("Courier", 7)
+    pdf.setFillColor(colors.HexColor("#94a3b8"))
+    pdf.drawString(tx, ty - 22 * mm, f"RS256 sig: {_short_sig(ctx.signature_jws)}")
 
 
 def _mm() -> float:
@@ -231,11 +295,10 @@ def _render_classic(ctx: CertificateContext) -> bytes:
 
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(colors.HexColor("#6b7280"))
-    pdf.drawCentredString(width / 2, 48 * mm, f"Issued: {ctx.issued_at}"
+    pdf.drawCentredString(width / 2, 70 * mm, f"Issued: {ctx.issued_at}"
                           + (f"   |   Expires: {ctx.expires_at}" if ctx.expires_at else ""))
 
-    _draw_qr(pdf, ctx, width / 2 - 16 * mm, 54 * mm, 32 * mm, "#6b7280")
-    _draw_signature_footer(pdf, ctx, 20 * mm, 22 * mm)
+    _draw_verification_panel(pdf, ctx, 24 * mm, 20 * mm, width - 48 * mm)
     return _finish(pdf, buf, ctx, width, height)
 
 
@@ -289,11 +352,10 @@ def _render_modern(ctx: CertificateContext) -> bytes:
 
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(colors.HexColor("#64748b"))
-    pdf.drawString(32 * mm, 44 * mm, f"Issued: {ctx.issued_at}"
+    pdf.drawString(32 * mm, 70 * mm, f"Issued: {ctx.issued_at}"
                    + (f"   |   Expires: {ctx.expires_at}" if ctx.expires_at else ""))
 
-    _draw_qr(pdf, ctx, width - 52 * mm, 44 * mm, 30 * mm, "#64748b")
-    _draw_signature_footer(pdf, ctx, 32 * mm, 22 * mm)
+    _draw_verification_panel(pdf, ctx, 32 * mm, 20 * mm, width - 56 * mm)
     return _finish(pdf, buf, ctx, width, height)
 
 
@@ -340,11 +402,10 @@ def _render_elegant(ctx: CertificateContext) -> bytes:
 
     pdf.setFont("Helvetica", 9)
     pdf.setFillColor(colors.HexColor("#9ca3af"))
-    pdf.drawCentredString(width / 2, 46 * mm, f"Issued {ctx.issued_at}"
+    pdf.drawCentredString(width / 2, 68 * mm, f"Issued {ctx.issued_at}"
                           + (f"  ·  Expires {ctx.expires_at}" if ctx.expires_at else ""))
 
-    _draw_qr(pdf, ctx, width / 2 - 15 * mm, 52 * mm, 30 * mm, "#9ca3af")
-    _draw_signature_footer(pdf, ctx, 20 * mm, 20 * mm)
+    _draw_verification_panel(pdf, ctx, 24 * mm, 20 * mm, width - 48 * mm)
     return _finish(pdf, buf, ctx, width, height)
 
 
@@ -382,9 +443,8 @@ def _render_minimal(ctx: CertificateContext) -> bytes:
     pdf.drawString(24 * mm, height - 98 * mm, f"Issued {ctx.issued_at}"
                    + (f"  ·  Expires {ctx.expires_at}" if ctx.expires_at else ""))
 
-    _draw_photo(pdf, ctx, 24 * mm, 40 * mm, 30 * mm)
-    _draw_qr(pdf, ctx, width - 54 * mm, 40 * mm, 30 * mm, "#9ca3af")
-    _draw_signature_footer(pdf, ctx, 24 * mm, 24 * mm)
+    _draw_photo(pdf, ctx, 24 * mm, 66 * mm, 28 * mm)
+    _draw_verification_panel(pdf, ctx, 24 * mm, 20 * mm, width - 48 * mm)
     return _finish(pdf, buf, ctx, width, height)
 
 

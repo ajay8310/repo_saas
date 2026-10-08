@@ -8,6 +8,7 @@ permissions; ownership is additionally enforced in the service layer.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -194,4 +195,5 @@ async def download_wallet_certificate(
 
 
 def _response(item: WalletItem) -> WalletItemResponse:
-    return WalletItemResponse(**item.__dict__)
+    # WalletItem is a slotted frozen dataclass (no __dict__); use asdict().
+    return WalletItemResponse(**asdict(item))

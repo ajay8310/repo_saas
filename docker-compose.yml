@@ -110,6 +110,32 @@ services:
       redis:
         condition: service_healthy
 
+  # ---------- Frontend (Vite dev server) ----------
+  # Runs inside the compose network so its /api proxy reaches the API by
+  # service name (api:8000). Source is bind-mounted for live reload.
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      VITE_API_TARGET: http://api:8000
+    # Bind-mount source + configs for live reload, but keep the image's
+    # Linux-installed node_modules via an anonymous volume. Mounting the whole
+    # host ./frontend would overlay Windows-built node_modules into the Linux
+    # container and break the vite/esbuild native binaries.
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - /app/node_modules
+    depends_on:
+      - api
+
   # ---------- Migrations ----------
   migrate:
     build:
@@ -123,6 +149,32 @@ services:
         condition: service_healthy
     profiles:
       - migrate
+
+  # ---------- Demo seed ----------
+  # One-shot: applies migrations then seeds the S3 bucket + demo tenant + a
+  # sample issued/public badge so the browser demo works out of the box and
+  # survives `docker compose down/up`. Idempotent and dev-only.
+  seed:
+    build:
+      context: .
+      target: dev
+    command: sh -c "alembic upgrade head && python -m app.seed_demo"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reposaaas:reposaaas@postgres:5432/reposaaas
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://localstack:4566
+      KMS_ENDPOINT_URL: http://localstack:4566
+      ENVIRONMENT: development
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+    restart: "no"
 
   # ---------- MCP server (Model Context Protocol) ----------
   # Isolated image (own pydantic/mcp deps). This is a stdio server, so it is

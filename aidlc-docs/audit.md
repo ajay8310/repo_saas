@@ -448,3 +448,64 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 **Context**: CONSTRUCTION - Build and Test (all tests green)
 
 ---
+
+## Frontend Demo Durability — Option A Completion (Vite dev-server node_modules fix)
+**Timestamp**: 2026-08-24T00:00:00Z
+**User Input**: "A" (chose Option A: keep the live Vite dev server; fix the node_modules mount, rather than Option B static build served by the backend)
+**AI Response**: Diagnosed and fixed the recurring `sh: 1: vite: not found` crash loop on `repo_as_saas-frontend-1`.
+**Context**: Construction / Build-and-Test — browser demo wiring to real backend data.
+
+### Root cause (definitive)
+- The anonymous volume `- /app/node_modules` was NOT the problem: a fresh volume populates correctly from the image, and `/app/node_modules/.bin/vite` exists (127 packages present).
+- The real cause: `node_modules/.bin/vite` was generated as a broken Windows-style cmd-shim (a 397-byte regular file, not a POSIX symlink) because the build context originates from a Windows host. Executing the shim yields "not found" even though the package is installed. `npm run dev` resolves vite via that broken shim and fails.
+- Verified: `node node_modules/vite/bin/vite.js --version` → `vite/5.4.21 linux-x64 node-v20.20.2` (shim-independent, works).
+
+### Fix applied
+- `frontend/Dockerfile` CMD changed from `npm run dev` / `.bin/vite` shim to:
+  `CMD ["node", "node_modules/vite/bin/vite.js", "--host", "0.0.0.0", "--port", "3000"]`
+  (bypasses the broken shim entirely; robust across restarts).
+- `docker-compose.yml` frontend service unchanged (Option A: `build: ./frontend`, source bind-mounts + `- /app/node_modules` anonymous volume).
+
+### Verification
+- `repo_as_saas-frontend-1` is `Up`; logs show `VITE v5.4.21 ready`, Local `http://localhost:3000/`, Network `http://172.18.0.9:3000/` (on compose network, so `/api` proxy to `api:8000` resolves).
+- End-to-end through the browser's exact path (`localhost:3000` → Vite proxy → `api:8000`):
+  - `POST /api/v1/auth/dev-token {"role":"issuer"}` → 200, real RS256 token (len 572).
+  - `GET /api/v1/badges/classes` with that token → 200, returns the SEEDED class "Advanced Python — Demo" (tenant df4392f1-3367-46b6-9b34-0ee04ae9fe8d), NOT the baked-in INITIAL_BADGES seed rows.
+- Durability confirmed: `docker restart repo_as_saas-frontend-1` → container returns `Up`, vite starts cleanly from the image modules. Survives `docker compose down/up`.
+- Temp files cleaned (host `_*.txt`/`_*.ps1`, `current_certificate.pdf`; container `/app/_*.py`).
+
+### Honest caveats (flagged to user)
+- `/api/v1/auth/dev-token` is dev-only (gated to `environment=development`; returns 404 in prod).
+- Issuer signing is RS256 JWS embedded in PDF metadata + a visible verification panel, NOT a PAdES/X.509 PDF signature.
+- Issuer private keys are vault-sealed only when `pii_encryption_enabled`; otherwise stored plaintext (ops hardening needed before production).
+
+---
+
+## Wallet 500 Fix — slotted dataclass serialization (beneficiary showed demo rows)
+**Timestamp**: 2026-08-24T00:30:00Z
+**User Input**: "I dont see this" (two screenshots: Badges page as issuer showing real seeded class; Wallet page as jane.learner@example.com showing hardcoded demo rows "Python Expert"/"Data Steward" with greyed-out Certificate download and banner "Certificate download is available once the badge is issued live")
+**AI Response**: Diagnosed and fixed a 500 on GET /api/v1/wallet that caused the Wallet page to silently fall back to its static demo rows.
+**Context**: Construction / Build-and-Test — browser demo on live data.
+
+### Root cause
+- `frontend/.../WalletPage.tsx` calls `listWallet(true)` and only replaces its `INITIAL_WALLET` demo rows when `rows.length > 0`; the fetch error is swallowed by `.catch(() => undefined)`.
+- The live call `GET /api/v1/wallet` returned **500**. Traceback: `app/routers/wallet.py` `_response()` did `WalletItemResponse(**item.__dict__)`, but `WalletItem` is `@dataclass(frozen=True, slots=True)` → no `__dict__` → `AttributeError`.
+- This only triggered once real issued rows existed (empty wallet returns `[]` and serializes fine), which is why unit tests (service-layer) and earlier manual checks never hit it.
+- The beneficiary dev-token subject (`jane.learner@example.com`) correctly matches the seeded earner, so the query itself was returning the right rows — only serialization crashed.
+
+### Fix applied
+- `app/routers/wallet.py`:
+  - Added `from dataclasses import asdict` (NOTE: the import was dropped once by the editor/hook reformat on first edit; re-added and verified present at line 11).
+  - Changed `_response()` to `return WalletItemResponse(**asdict(item))`.
+
+### Verification
+- `POST /api/v1/auth/dev-token {"role":"beneficiary"}` → 200, `sub=jane.learner@example.com`, tenant `df4392f1...`.
+- `GET /api/v1/wallet` → **200**, returns live rows incl. "Advanced Python — Demo" (public, image + cert) plus the Cloud Architect / E2E badges issued during testing — NOT the hardcoded Python Expert/Data Steward demo rows.
+- `GET /api/v1/wallet/{assertion_id}/certificate` → 200, `application/pdf`, 12283 bytes (real issuer-signed PDF with QR + signature panel + photo).
+- Tests: `pytest -k wallet` → 13 passed (9 unit + 4 property), 0 failed.
+- Temp files cleaned.
+
+### Browser outcome
+- Wallet page now renders Jane's real badges with working Certificate download (no more greyed-out buttons / "available once issued live" banner), because `listWallet` returns a non-empty array and `setLive(true)` engages.
+
+---
