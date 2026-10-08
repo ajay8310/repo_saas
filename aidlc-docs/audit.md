@@ -509,3 +509,157 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 - Wallet page now renders Jane's real badges with working Certificate download (no more greyed-out buttons / "available once issued live" banner), because `listWallet` returns a non-empty array and `setLive(true)` engages.
 
 ---
+
+## New Feature Request — Visual Certificate Template Designer (U5)
+**Timestamp**: 2026-08-24T01:00:00Z
+**User Input**: "Go ahead with B. Also, template should be flexible to upload institutuion logo as well." (B = full visual drag-and-drop certificate template designer, chosen over A=customize built-ins and C=HTML/CSS upload; plus institution logo upload as a first-class element)
+**AI Response**: Entering Requirements Analysis for a new feature U5 (Certificate Template Designer). Gathered the full certificate/badge pipeline via context-gatherer. Will produce requirements → design → implementation plan, each gated on user approval before coding. Extensions in effect: Security OFF, Resiliency ON, PBT ON.
+**Context**: INCEPTION/Requirements Analysis for additive feature U5.
+
+### Key integration points established (from context-gatherer)
+- Renderer is coordinate-based ReportLab (`app/services/certificate_renderer.py`), dict-dispatch `_TEMPLATES` over 4 built-ins; `render_certificate(ctx, template)`.
+- `CertificateService.build_certificate` resolves assertion/class/tenant, fetches S3 images, signs RS256 JWS, selects `badge_class.certificate_template`, renders, audits.
+- `BadgeClass.certificate_template VARCHAR(32)` has a DB CHECK constraint IN (classic|modern|elegant|minimal) + router regex + frontend union — all enumerate the 4 names (must be extended/relaxed for custom).
+- Asset storage pattern: boto3 inline client, malware scan (fails closed→503), `put_object` SSE-KMS, key `badges/{tenant}/{class}/...`; fetch via `_fetch_s3`.
+- RBAC: issuer currently lacks `badge:update`; template/photo changes are admin-only today. New designer permissions needed so issuers can design.
+- Frontend: axios `/api/v1` + bearer; add page + route (ISSUING_ROLES) in App.tsx + Layout nav; helpers in lib/badges.ts (or new lib).
+- WeasyPrint is installed but unused; renderer is 100% ReportLab. ReportLab ImageReader does NOT embed SVG.
+
+---
+
+## U5 Requirements — Approved
+**Timestamp**: 2026-08-24T01:20:00Z
+**User Input**: "Approved as-is"
+**AI Response**: Requirements for U5 (Certificate Template Designer) approved with all 4 recommended decisions: (1) ReportLab data-driven renderer, (2) PDF live preview, (3) PNG/JPEG logo (SVG later), (4) custom_template_id FK. Proceeding to Design + Implementation Plan (next approval gate before coding).
+**Context**: INCEPTION/Requirements → CONSTRUCTION/Functional+NFR Design for U5.
+
+---
+
+## U5 Design + Plan Approved; Part A Built & Verified
+**Timestamp**: 2026-08-24T02:00:00Z
+**User Input**: "Approved as-is" (design/plan gate) then "start building Part A"
+**AI Response**: Wrote design (`aidlc-docs/construction/u5-template-designer/design.md`) + plan (`aidlc-docs/construction/plans/u5-template-designer-plan.md`). Built and verified Part A (backend data & rendering core).
+**Context**: CONSTRUCTION / Code Generation U5, Part A.
+
+### Delivered (Part A)
+- `app/models/certificate_template.py` — `CertificateTemplate` model; re-exported in `app/models/__init__.py`; `BadgeClass.custom_template_id` FK added.
+- `alembic/versions/008_certificate_templates.py` — **renumbered from 007 (007 already existed as badge_analytics)**. Creates `certificate_templates` (tenant-scoped) + forced RLS `tenant_isolation` + tenant index + CHECK(orientation), CHECK(status); adds `badge_classes.custom_template_id` FK ON DELETE SET NULL. Reversible.
+- `app/services/certificate_layout.py` — pydantic layout models, FONT/PLACEHOLDER whitelists, `validate_layout`, `layout_has_verification`, `resolve_placeholders` (unknown tokens → empty).
+- `app/services/certificate_renderer.py` — appended `CustomAssets` + `render_custom_certificate` + data-driven block drawing (text/photo/badge/logo/qr/signature/line/rect), normalized→A4 origin-flip mapping, opacity/rotation, verification-panel injection when omitted, try/except fallback to classic.
+- `app/config.py` — `certificate_template_asset_max_bytes`, `certificate_template_max_blocks`.
+
+### Verification (in api container)
+- Imports OK; `BadgeClass.custom_template_id` present.
+- `validate_layout`: valid→[], invalid→4 precise errors (orientation/color/font/size).
+- `resolve_placeholders`: known tokens substituted, unknown→empty, no `{{}}` leak.
+- Custom render → valid `%PDF` (3842 B); no-verify layout → injected panel (4496 B); broken layout → classic fallback (4436 B), no raise.
+- Migration up/down/up clean → `008 (head)`; `\d certificate_templates` shows table+constraints+FK; RLS enabled+forced with tenant_isolation; `badge_classes.custom_template_id` present.
+- Temp files cleaned (host + container).
+
+### Correction logged
+- Initial migration mis-numbered `007` (session-start tree only showed ≤004; 005/006/007 added later). Caught by alembic "multiple heads"; renumbered to `008` chained after `007`.
+
+### Next: Part B (service + API + RBAC).
+
+---
+
+## U5 Part B — Service + API + RBAC — Built & Verified
+**Timestamp**: 2026-08-24T02:40:00Z
+**User Input**: "yes" (proceed to Part B)
+**AI Response**: Built and verified Part B of the certificate template designer.
+**Context**: CONSTRUCTION / Code Generation U5, Part B.
+
+### Delivered
+- `app/services/certificate_template_service.py` — `CertificateTemplateService`: create/list/get/update (version bump)/delete(archive, 409-if-in-use), `upload_asset` (logo/background; type+size validation; malware scan fails-closed→503; SSE-KMS; key `badges/{tenant}/templates/{id}/{kind}-{uuid}.{ext}`), `render_preview` (inline sample-data PDF) + `render_preview_of` (saved), `assign_to_class` (set/clear `custom_template_id`), `_sample_context`, factory.
+- `app/services/certificate_service.py` — `build_certificate` now selects custom vs built-in; new `_render_with_custom_template` fetches assets + renders via `render_custom_certificate`, falls back to built-in default if template missing/inactive; audit metadata `custom:<id>`.
+- `app/rbac/permissions.py` — `badge:template_manage` added to super_admin, tenant_admin, issuer.
+- `app/routers/certificate_templates.py` — full CRUD + assets + preview (inline + saved) + assign; registered in `app/main.py`. `BadgeClassResponse` gained `custom_template_id`.
+
+### Verification (live app via :3000 proxy)
+- create → 201 (version 1); inline preview → 200 application/pdf (5460 B).
+- assign to seeded "Advanced Python" class → class response carries custom_template_id.
+- beneficiary wallet certificate download for the real assertion → 200 application/pdf (7634 B) rendered through the custom path.
+- delete while assigned → 409 (TemplateInUseError).
+- RBAC: beneficiary create → 403; verifier list → 403.
+- Part B smoke: imports OK, all 6 routes registered, RBAC map correct, build_certificate hook present.
+
+### Bugs found & fixed during verification
+1. Audit `resource_id` NOT NULL violation on create — `tpl.id` is None before flush; fixed with `await db.flush()` before `_audit.record`.
+2. Recurring import-revert (editor/hook reformat): both the `main.py` router import and the `certificate_service.py` `CertificateTemplate`/`CustomAssets`/`render_custom_certificate` imports were dropped on first edit; re-added and verified present via grep.
+
+### Next: Part C (backend unit + property tests) then D (frontend).
+
+---
+
+## U5 Part C — Backend Tests — Written & Passing
+**Timestamp**: 2026-08-24T03:10:00Z
+**User Input**: "Yes" (proceed to Part C)
+**AI Response**: Wrote and ran U5 backend tests.
+**Context**: CONSTRUCTION / Code Generation U5, Part C.
+
+### Delivered
+- `tests/unit/test_certificate_template_service.py` (24 tests) — create (valid add/flush/commit; reject blank name/bad orientation/invalid layout), update (version bump, missing→404, invalid layout), delete (archive when unused, 409 when in use, missing→404), upload_asset (logo/background key set, bad kind/type, malware reject, scanner-outage fail-closed→503, missing template), assign (set/clear custom_template_id, missing class, missing/archived template), preview (inline PDF, saved PDF, missing→404). Fakes mirror existing wallet tests (queued-result _FakeSession, MagicMock S3, fake scanner).
+- `tests/unit/test_certificate_layout.py` (22 tests) — geometry bounds (x+w/y+h overflow, exact-1 boundary ok, duplicate ids, too-many-blocks), enums/types (bad orientation/color/font, font whitelist, unknown block type, text requires text, non-text needs none), verification detection, placeholder safety (known subst, unknown→empty, whitespace, all whitelisted tokens).
+- `tests/property/test_template_properties.py` (5 Hypothesis properties) — geometry mapping stays on-page for both orientations; no residual `{{...}}` for arbitrary mixed text; known tokens substituted; rendered PDF always `%PDF` + embeds `issuer_signature=` in metadata; no-verification-block layout still renders signed PDF (FR-U5-10).
+
+### Results
+- New U5 suite: **51 passed** (24 + 22 + 5), 1 benign ReportLab deprecation warning.
+- Broader regression check `-k 'template or certificate or badge or wallet or rbac or permission'`: **102 passed, 0 failed**, 4 benign pre-existing warnings. No regressions.
+
+### Next: Part D (frontend designer).
+
+---
+
+## U5 Part D — Frontend Designer — Built & Typechecked
+**Timestamp**: 2026-08-24T03:40:00Z
+**User Input**: "yes" (proceed to Part D)
+**AI Response**: Built the frontend certificate template designer.
+**Context**: CONSTRUCTION / Code Generation U5, Part D.
+
+### Delivered
+- `frontend/src/lib/templates.ts` — types (Block, BlockType, Layout, PageSettings, CertTemplate), constants (BLOCK_TYPES, FONTS, PLACEHOLDERS), API helpers (list/get/create/update/delete, uploadTemplateAsset, previewLayout/previewSavedTemplate, assignTemplateToClass), `fileToBase64`, `starterLayout`.
+- `frontend/src/pages/tenant/TemplateDesignerPage.tsx` — three-pane WYSIWYG designer: palette (8 block types), A4 canvas (aspect-ratio by orientation) with pointer drag-move + a resize handle + click-select + keyboard nudge/delete (ARIA role=application, labelled, focus ring = NFR-U5-7), properties panel (text/font/size/align/color, logo upload, line/rect style, x/y/w/h as 0..1, opacity, rotation), live Preview (POST inline layout → PDF opened in a new tab), Save/Create, logo + background upload (save first), template list (open/delete, 409-aware), assign-to-badge dropdown, placeholder token chips, and a "verification always included" reminder.
+- Routing/nav: `App.tsx` route `template-designer` guarded by ISSUING_ROLES; `Layout.tsx` nav item "Certificate Designer" (Palette icon) for issuing roles.
+- Badges page: per-badge template `<select>` now has "Built-in" + "Custom (designer)" optgroups; custom selection assigns `custom_template_id`, built-in selection clears it. Added `custom_template_id` to the frontend `BadgeClass` type.
+
+### Verification
+- `tsc --noEmit` clean (fixed one unused-import error: dropped `savePdfBlob` from the designer page — preview opens in a new tab, no download helper needed).
+- Frontend container `Up`; `GET /template-designer` → HTTP 200. Live Vite HMR picked up all changes (no rebuild needed).
+
+### Next: Part E — end-to-end browser verification + state/docs update + cleanup.
+
+---
+
+## U5 Part E — End-to-end Verified; Feature COMPLETE
+**Timestamp**: 2026-08-24T04:10:00Z
+**User Input**: "yes" (proceed to Part E)
+**AI Response**: Ran the full designer flow end-to-end through the live app and finalized docs.
+**Context**: CONSTRUCTION / Code Generation U5, Part E (final).
+
+### End-to-end result (via :3000 Vite proxy → API)
+1. Create template (landscape, logo+text+qr blocks) → 201 v1.
+2. Upload institution logo → S3 key `badges/{tenant}/templates/{id}/logo-*.png`.
+3. Saved-template preview (resolves logo) → 200 application/pdf (6214 B).
+4. Assign to seeded "Advanced Python — Demo".
+5. Beneficiary certificate download → 200 application/pdf (8388 B) via custom path.
+6. PDF inspected: `%PDF` header; IMAGE_COUNT=3 (institution logo + badge image + QR); issuer_signature + verify_url embedded in metadata — verification guarantee intact.
+7. Clear custom (assign null) → built-in path renders → 200 (12283 B). Confirms backward-compatible built-in rendering + the custom-vs-builtin switch.
+8. Re-assigned custom so the demo stays branded.
+
+### Correction logged
+- Initial Part E test used `PUT /badges/classes/{id}/template` (built-in enum endpoint) which requires `badge:update` — the issuer role lacks it by design, so it returned 403. This is correct behavior, not a bug. Fixed the test to clear via the `/certificate-templates/assign` endpoint (issuers hold `badge:template_manage`). The custom-template feature itself works for issuers end-to-end.
+
+### Finalization
+- `aidlc-docs/aidlc-state.md` updated: U5 marked COMPLETE (all parts A–E).
+- Plan `u5-template-designer-plan.md`: all checkboxes checked.
+- Temp files cleaned (host + container).
+
+### Honest caveats (unchanged from design)
+- Logo/background assets are PNG/JPEG only (ReportLab can't embed SVG directly); SVG rasterization is a future enhancement.
+- Single A4 page, curated PDF-safe fonts (no arbitrary font upload yet), one style per text block.
+- The designer canvas is hand-built (no drag-drop library); functional + accessible but not a mature design tool.
+- Issuer private signing keys are vault-sealed only when pii_encryption_enabled, else plaintext (pre-existing; ops hardening before prod).
+
+### U5 FEATURE COMPLETE.
+
+---

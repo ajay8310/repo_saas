@@ -458,3 +458,242 @@ _TEMPLATES: dict[str, Callable[[CertificateContext], bytes]] = {
     "elegant": _render_elegant,
     "minimal": _render_minimal,
 }
+
+
+# ---------------------------------------------------------------------------
+# Custom (issuer-designed) templates — data-driven rendering (U5)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CustomAssets:
+    """Designer-uploaded assets resolved to bytes for a custom render."""
+
+    logo: bytes | None = None
+    background: bytes | None = None
+
+
+def render_custom_certificate(
+    ctx: CertificateContext,
+    layout: dict,
+    assets: CustomAssets | None = None,
+) -> bytes:
+    """Render a certificate from an issuer-designed *layout* (U5).
+
+    *layout* is the validated JSON (``{"page": {...}, "blocks": [...]}``) with
+    normalized (0..1, top-left origin) coordinates. Any failure falls back to the
+    classic built-in so a download never 500s (NFR-U5-2). The verification QR +
+    signature are always present: if the layout omits both, a default panel is
+    injected at the bottom (FR-U5-10). The RS256 JWS is embedded in metadata by
+    ``_new_canvas`` as for every template.
+    """
+    try:
+        return _render_custom(ctx, layout, assets or CustomAssets())
+    except Exception:
+        logger.warning(
+            "Custom certificate render failed; falling back to classic",
+            exc_info=True,
+        )
+        return _render_classic(ctx)
+
+
+def _page_size(orientation: str):
+    from reportlab.lib.pagesizes import A4, landscape
+
+    return landscape(A4) if orientation == "landscape" else A4
+
+
+def _abs_rect(block: dict, pw: float, ph: float) -> tuple[float, float, float, float]:
+    """Map a normalized (top-left origin) block to absolute ReportLab coords.
+
+    Returns ``(x, y, w, h)`` with a bottom-left origin, clamped on-page.
+    """
+    nx = _clamp01(block.get("x", 0.0))
+    ny = _clamp01(block.get("y", 0.0))
+    nw = _clamp01(block.get("w", 0.0))
+    nh = _clamp01(block.get("h", 0.0))
+    aw = nw * pw
+    ah = nh * ph
+    ax = nx * pw
+    ay = ph - (ny * ph) - ah  # flip origin
+    return ax, max(ay, 0.0), aw, ah
+
+
+def _clamp01(v) -> float:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if f < 0 else 1.0 if f > 1 else f
+
+
+def _render_custom(ctx: CertificateContext, layout: dict, assets: CustomAssets) -> bytes:
+    from reportlab.lib import colors
+
+    from app.services.certificate_layout import (
+        layout_has_verification,
+        resolve_placeholders,
+    )
+
+    page = layout.get("page") or {}
+    orientation = page.get("orientation", "portrait")
+    width, height = _page_size(orientation)
+
+    pdf, buf = _new_canvas(ctx)
+    pdf.setPageSize((width, height))
+
+    # Page background: solid color, then optional full-bleed image.
+    bg_color = page.get("background_color", "#ffffff")
+    try:
+        pdf.setFillColor(colors.HexColor(bg_color))
+        pdf.rect(0, 0, width, height, stroke=0, fill=1)
+    except Exception:
+        logger.debug("Invalid background_color %r; skipping", bg_color)
+    if page.get("background_image") and assets.background:
+        reader = _image_reader(assets.background)
+        if reader is not None:
+            pdf.drawImage(reader, 0, 0, width=width, height=height,
+                          preserveAspectRatio=False, mask="auto")
+
+    blocks = layout.get("blocks") or []
+    for block in sorted(
+        (b for b in blocks if isinstance(b, dict)),
+        key=lambda b: b.get("z", 0),
+    ):
+        _draw_block(pdf, ctx, block, assets, width, height, resolve_placeholders)
+
+    # Verification guarantee: inject a default panel if the design omitted both
+    # a qr and a signature block.
+    if not layout_has_verification(layout):
+        _draw_verification_panel(pdf, ctx, 24 * _mm(), 16 * _mm(), width - 48 * _mm())
+
+    return _finish(pdf, buf, ctx, width, height)
+
+
+def _draw_block(pdf, ctx, block, assets, pw, ph, resolve) -> None:
+    """Draw one layout block. Isolated in save/restore so one bad block can't
+    corrupt canvas state for the rest of the page."""
+
+    btype = block.get("type")
+    style = block.get("style") or {}
+    ax, ay, aw, ah = _abs_rect(block, pw, ph)
+
+    pdf.saveState()
+    try:
+        opacity = block.get("opacity", 1.0)
+        if isinstance(opacity, (int, float)) and 0.0 <= opacity < 1.0:
+            pdf.setFillAlpha(float(opacity))
+            pdf.setStrokeAlpha(float(opacity))
+        rotation = block.get("rotation", 0.0)
+        if rotation:
+            # Rotate about the block centre so position stays intuitive.
+            cx, cy = ax + aw / 2, ay + ah / 2
+            pdf.translate(cx, cy)
+            pdf.rotate(float(rotation))
+            pdf.translate(-cx, -cy)
+
+        if btype == "text":
+            _draw_text_block(pdf, ctx, style, ax, ay, aw, ah, resolve)
+        elif btype == "recipient_photo":
+            _draw_image_block(pdf, _image_reader(ctx.recipient_photo), style, ax, ay, aw, ah)
+        elif btype == "badge_image":
+            _draw_image_block(pdf, _image_reader(ctx.badge_image), style, ax, ay, aw, ah)
+        elif btype == "logo":
+            _draw_image_block(pdf, _image_reader(assets.logo), style, ax, ay, aw, ah)
+        elif btype == "qr":
+            _draw_qr_block(pdf, ctx, style, ax, ay, aw, ah)
+        elif btype == "signature":
+            _draw_verification_panel(pdf, ctx, ax, ay, aw)
+        elif btype == "line":
+            _draw_line_block(pdf, style, ax, ay, aw, ah)
+        elif btype == "rect":
+            _draw_rect_block(pdf, style, ax, ay, aw, ah)
+    except Exception:
+        logger.debug("Skipping malformed block %r", block, exc_info=True)
+    finally:
+        pdf.restoreState()
+
+
+def _draw_text_block(pdf, ctx, style, ax, ay, aw, ah, resolve) -> None:
+    from reportlab.lib import colors
+
+    raw = style.get("text", "") or ""
+    text = resolve(raw, ctx)
+    if not text:
+        return
+    font = style.get("font", "Helvetica")
+    size = float(style.get("size", 14))
+    align = style.get("align", "left")
+    color = style.get("color", "#111827")
+    pdf.setFont(font, size)
+    try:
+        pdf.setFillColor(colors.HexColor(color))
+    except Exception:
+        pdf.setFillColor(colors.black)
+    # Baseline near the vertical centre of the box.
+    ty = ay + ah / 2 - size / 3
+    if align == "center":
+        pdf.drawCentredString(ax + aw / 2, ty, text)
+    elif align == "right":
+        pdf.drawRightString(ax + aw, ty, text)
+    else:
+        pdf.drawString(ax, ty, text)
+
+
+def _draw_image_block(pdf, reader, style, ax, ay, aw, ah) -> None:
+    from reportlab.lib import colors
+
+    if style.get("border"):
+        try:
+            pdf.setStrokeColor(colors.HexColor(style.get("border_color", "#d1d5db")))
+        except Exception:
+            pdf.setStrokeColor(colors.HexColor("#d1d5db"))
+        pdf.setLineWidth(1)
+        pdf.rect(ax, ay, aw, ah, stroke=1, fill=0)
+    if reader is None:
+        # Graceful placeholder so a missing asset never 500s the render.
+        pdf.setFillColor(colors.HexColor("#f1f5f9"))
+        pdf.rect(ax, ay, aw, ah, stroke=0, fill=1)
+        return
+    pdf.drawImage(reader, ax, ay, width=aw, height=ah,
+                  preserveAspectRatio=True, anchor="c", mask="auto")
+
+
+def _draw_qr_block(pdf, ctx, style, ax, ay, aw, ah) -> None:
+    from reportlab.lib import colors
+
+    size = min(aw, ah)
+    qx = ax + (aw - size) / 2
+    pdf.drawImage(_image_reader(_qr_png(ctx.verify_url)), qx, ay, width=size, height=size)
+    caption = style.get("caption", "Scan to verify")
+    if caption:
+        pdf.setFont("Helvetica", 7)
+        pdf.setFillColor(colors.HexColor("#475569"))
+        pdf.drawCentredString(ax + aw / 2, ay - 3.5 * _mm(), caption)
+
+
+def _draw_line_block(pdf, style, ax, ay, aw, ah) -> None:
+    from reportlab.lib import colors
+
+    try:
+        pdf.setStrokeColor(colors.HexColor(style.get("color", "#111827")))
+    except Exception:
+        pdf.setStrokeColor(colors.black)
+    pdf.setLineWidth(float(style.get("line_width", 1)))
+    # Draw along the diagonal of the box (so a thin, wide box is a horizontal rule).
+    pdf.line(ax, ay + ah / 2, ax + aw, ay + ah / 2)
+
+
+def _draw_rect_block(pdf, style, ax, ay, aw, ah) -> None:
+    from reportlab.lib import colors
+
+    fill = 1 if style.get("fill") else 0
+    try:
+        c = colors.HexColor(style.get("color", "#111827"))
+    except Exception:
+        c = colors.black
+    pdf.setStrokeColor(c)
+    if fill:
+        pdf.setFillColor(c)
+    pdf.setLineWidth(float(style.get("line_width", 1)))
+    pdf.rect(ax, ay, aw, ah, stroke=1, fill=fill)

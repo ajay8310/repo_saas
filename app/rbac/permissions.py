@@ -37,6 +37,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "badge:issue", "badge:bulk_issue", "badge:revoke", "badge:publish",
         "badge:issuer_profile", "badge:wallet_read", "badge:wallet_manage",
         "badge:certificate", "badge:wallet_certificate", "badge:analytics",
+        "badge:template_manage",
     },
     "tenant_admin": {
         "tenant:read", "tenant:update", "tenant:rotate_key",
@@ -53,6 +54,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "badge:issue", "badge:bulk_issue", "badge:revoke", "badge:publish",
         "badge:issuer_profile", "badge:wallet_read", "badge:wallet_manage",
         "badge:certificate", "badge:wallet_certificate", "badge:analytics",
+        "badge:template_manage",
     },
     "issuer": {
         "schema:read",
@@ -61,6 +63,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "search:query",
         "badge:read", "badge:issue", "badge:bulk_issue", "badge:revoke",
         "badge:certificate", "badge:analytics",
+        "badge:template_manage",
     },
     "beneficiary": {
         "document:read", "document:download", "document:list",

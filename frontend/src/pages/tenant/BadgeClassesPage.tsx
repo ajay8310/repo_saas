@@ -9,6 +9,8 @@ import {
   createBadgeClass,
   setCertificateTemplate,
 } from '@/lib/badges'
+import type { CertTemplate } from '@/lib/templates'
+import { assignTemplateToClass, listTemplates } from '@/lib/templates'
 
 /**
  * Badge Classes console (Credly-style credentialing, U1).
@@ -48,6 +50,7 @@ const EMPTY_FORM: CreateForm = {
 
 export default function BadgeClassesPage() {
   const [badges, setBadges] = useState<BadgeClass[]>(INITIAL_BADGES)
+  const [customTemplates, setCustomTemplates] = useState<CertTemplate[]>([])
   const [live, setLive] = useState(false)
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<BadgeClass | null>(null)
@@ -67,6 +70,9 @@ export default function BadgeClassesPage() {
           if (rows.length > 0) setBadges(rows)
         }
       })
+      .catch(() => undefined)
+    listTemplates()
+      .then(rows => { if (active && Array.isArray(rows)) setCustomTemplates(rows) })
       .catch(() => undefined)
     return () => {
       active = false
@@ -117,18 +123,38 @@ export default function BadgeClassesPage() {
     notify(`Created badge "${name}".`)
   }
 
-  const changeTemplate = async (badge: BadgeClass, template: CertificateTemplate) => {
+  // Dropdown value is either a built-in name or "custom:<id>" for a saved
+  // designer template. Built-ins go through setCertificateTemplate; custom
+  // selections assign/clear the badge's custom_template_id.
+  const changeTemplate = async (badge: BadgeClass, value: string) => {
+    const isCustom = value.startsWith('custom:')
     if (live) {
       try {
-        await setCertificateTemplate(badge.id, template)
+        if (isCustom) {
+          await assignTemplateToClass(badge.id, value.slice('custom:'.length))
+        } else {
+          await setCertificateTemplate(badge.id, value as CertificateTemplate)
+          if (badge.custom_template_id) await assignTemplateToClass(badge.id, null)
+        }
       } catch {
         notify('Could not save template on the server.', 'error')
       }
     }
     setBadges(prev =>
-      prev.map(b => (b.id === badge.id ? { ...b, certificate_template: template } : b)),
+      prev.map(b =>
+        b.id === badge.id
+          ? {
+              ...b,
+              certificate_template: isCustom ? b.certificate_template : (value as CertificateTemplate),
+              custom_template_id: isCustom ? value.slice('custom:'.length) : null,
+            }
+          : b,
+      ),
     )
-    notify(`"${badge.name}" certificate template set to ${template}.`)
+    const label = isCustom
+      ? (customTemplates.find(t => `custom:${t.id}` === value)?.name ?? 'custom')
+      : value
+    notify(`"${badge.name}" certificate template set to ${label}.`)
   }
 
   const handleEdit = (form: CreateForm) => {
@@ -313,13 +339,22 @@ export default function BadgeClassesPage() {
               <label className="text-xs text-gray-500">Certificate:</label>
               <select
                 data-testid={`badge-template-${badge.id}`}
-                value={badge.certificate_template}
-                onChange={e => changeTemplate(badge, e.target.value as CertificateTemplate)}
+                value={badge.custom_template_id ? `custom:${badge.custom_template_id}` : badge.certificate_template}
+                onChange={e => changeTemplate(badge, e.target.value)}
                 className="text-xs border border-gray-300 rounded px-2 py-1 capitalize"
               >
-                {CERTIFICATE_TEMPLATES.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
+                <optgroup label="Built-in">
+                  {CERTIFICATE_TEMPLATES.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </optgroup>
+                {customTemplates.length > 0 && (
+                  <optgroup label="Custom (designer)">
+                    {customTemplates.map(t => (
+                      <option key={t.id} value={`custom:${t.id}`}>{t.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 

@@ -15,6 +15,7 @@ export interface BadgeClass {
   status: 'active' | 'inactive'
   directory_visible: boolean
   certificate_template: CertificateTemplate
+  custom_template_id?: string | null
   created_at: string | null
 }
 

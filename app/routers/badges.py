@@ -79,6 +79,7 @@ class BadgeClassResponse(BaseModel):
     status: str
     directory_visible: bool
     certificate_template: str
+    custom_template_id: str | None = None
     created_at: str | None
 
 
@@ -568,6 +569,11 @@ def _class_response(badge) -> BadgeClassResponse:
         status=badge.status,
         directory_visible=badge.directory_visible,
         certificate_template=getattr(badge, "certificate_template", "classic"),
+        custom_template_id=(
+            str(badge.custom_template_id)
+            if getattr(badge, "custom_template_id", None)
+            else None
+        ),
         created_at=badge.created_at.isoformat() if badge.created_at else None,
     )
 

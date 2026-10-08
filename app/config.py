@@ -531,6 +531,20 @@ class Settings(BaseSettings):
         ge=1024,
         description="Maximum recipient-photo upload size for certificates, in bytes.",
     )
+    # ------------------------------------------------------------------
+    # Certificate template designer (U5)
+    # ------------------------------------------------------------------
+    certificate_template_asset_max_bytes: int = Field(
+        default=2 * 1024 * 1024,  # 2 MB
+        ge=1024,
+        description="Max size of a designer logo/background upload, in bytes.",
+    )
+    certificate_template_max_blocks: int = Field(
+        default=60,
+        ge=1,
+        le=500,
+        description="Max number of blocks allowed in a custom certificate layout.",
+    )
 
     # ------------------------------------------------------------------
     # Public directory & analytics (U3)

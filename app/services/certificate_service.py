@@ -30,10 +30,16 @@ from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.middleware.tenant_context import set_tenant_context
 from app.models.badge import BadgeAssertion, BadgeClass
+from app.models.certificate_template import CertificateTemplate
 from app.models.tenant import Tenant
 from app.services.audit_service import AuditService
 from app.services.badge_event_service import BadgeEventService
-from app.services.certificate_renderer import CertificateContext, render_certificate
+from app.services.certificate_renderer import (
+    CertificateContext,
+    CustomAssets,
+    render_certificate,
+    render_custom_certificate,
+)
 from app.services.issuer_signing_service import IssuerSigningService
 from app.services.malware_scanner import (
     MalwareScanner,
@@ -218,8 +224,21 @@ class CertificateService:
             recipient_photo=recipient_photo,
         )
 
-        template = badge_class.certificate_template if badge_class else self.settings.certificate_default_template
-        pdf = render_certificate(ctx, template)
+        # Custom (issuer-designed) template takes precedence over the built-in
+        # string when a badge class references one (U5). Any failure in the
+        # custom path falls back to the built-in renderer inside
+        # render_custom_certificate, so a download never 500s.
+        custom_id = getattr(badge_class, "custom_template_id", None) if badge_class else None
+        if custom_id is not None:
+            template_label, pdf = await self._render_with_custom_template(custom_id, ctx)
+        else:
+            template_label = (
+                badge_class.certificate_template
+                if badge_class
+                else self.settings.certificate_default_template
+            )
+            pdf = render_certificate(ctx, template_label)
+        template = template_label
 
         self._events.record(
             tenant_id=tenant_id,
@@ -265,6 +284,36 @@ class CertificateService:
     async def _get_tenant(self, tenant_id: UUID) -> Tenant | None:
         result = await self.db.execute(select(Tenant).where(Tenant.id == tenant_id))
         return result.scalar_one_or_none()
+
+    async def _render_with_custom_template(
+        self, template_id: UUID, ctx: CertificateContext
+    ) -> tuple[str, bytes]:
+        """Render using an issuer-designed template (U5).
+
+        Returns ``(label, pdf)`` where label is ``custom:<id>`` for the audit
+        trail. If the template row is missing/archived, falls back to the
+        built-in default so the download still succeeds. The custom renderer
+        itself falls back to classic on any render error.
+        """
+        tpl = (
+            await self.db.execute(
+                select(CertificateTemplate).where(CertificateTemplate.id == template_id)
+            )
+        ).scalar_one_or_none()
+        if tpl is None or tpl.status != "active":
+            logger.warning(
+                "Custom template %s missing/inactive; using built-in default", template_id
+            )
+            return (
+                self.settings.certificate_default_template,
+                render_certificate(ctx, self.settings.certificate_default_template),
+            )
+        assets = CustomAssets(
+            logo=self._fetch_s3(tpl.logo_s3_key) if tpl.logo_s3_key else None,
+            background=self._fetch_s3(tpl.background_s3_key) if tpl.background_s3_key else None,
+        )
+        pdf = render_custom_certificate(ctx, tpl.layout or {}, assets)
+        return f"custom:{template_id}", pdf
 
     def _fetch_s3(self, key: str) -> bytes | None:
         try:

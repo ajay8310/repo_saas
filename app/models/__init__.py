@@ -14,6 +14,7 @@ from app.models.badge import (  # noqa: F401
     BadgeEvent,
 )
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin  # noqa: F401
+from app.models.certificate_template import CertificateTemplate  # noqa: F401
 from app.models.consent import ConsentRecord, ErasureRequest  # noqa: F401
 from app.models.digilocker import DigiLockerPush  # noqa: F401
 from app.models.document import BulkJob, Document  # noqa: F401

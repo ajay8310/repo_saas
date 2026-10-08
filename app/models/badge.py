@@ -48,6 +48,15 @@ class BadgeClass(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     certificate_template: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="classic"
     )
+    # Optional reference to an issuer-designed custom template (U5). When set,
+    # it takes precedence over ``certificate_template``; when null, the built-in
+    # path renders. ON DELETE SET NULL so archiving/removing a template cleanly
+    # reverts affected classes to their built-in template.
+    custom_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("certificate_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
 
 class BadgeAssertion(Base):

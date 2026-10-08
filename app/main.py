@@ -33,6 +33,7 @@ from app.routers import anchoring as anchoring_router
 from app.routers import audit as audit_router
 from app.routers import auth as auth_router
 from app.routers import badges as badges_router
+from app.routers import certificate_templates as certificate_templates_router
 from app.routers import documents as documents_router
 from app.routers import notifications as notifications_router
 from app.routers import privacy as privacy_router
@@ -194,6 +195,7 @@ def _register_routes(app: FastAPI, settings) -> None:  # noqa: ANN001
     app.include_router(anchoring_router.router, prefix=settings.api_v1_prefix)
     app.include_router(privacy_router.router, prefix=settings.api_v1_prefix)
     app.include_router(badges_router.router, prefix=settings.api_v1_prefix)
+    app.include_router(certificate_templates_router.router, prefix=settings.api_v1_prefix)
     app.include_router(wallet_router.router, prefix=settings.api_v1_prefix)
     app.include_router(analytics_router.router, prefix=settings.api_v1_prefix)
     # Public, unauthenticated hosted-assertion routes (skipped by tenant-context

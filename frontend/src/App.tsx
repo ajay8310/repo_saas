@@ -18,6 +18,7 @@ import VerifyPage from './pages/public/VerifyPage'
 import LandingPage from './pages/public/LandingPage'
 import DirectoryPage from './pages/public/DirectoryPage'
 import BadgeAnalyticsPage from './pages/tenant/BadgeAnalyticsPage'
+import TemplateDesignerPage from './pages/tenant/TemplateDesignerPage'
 
 /**
  * Role sets per area, mirroring ROLE_PERMISSIONS in app/rbac/permissions.py.
@@ -96,6 +97,14 @@ export default function App() {
           element={
             <ProtectedRoute requiredRoles={ISSUING_ROLES}>
               <BadgeAnalyticsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="template-designer"
+          element={
+            <ProtectedRoute requiredRoles={ISSUING_ROLES}>
+              <TemplateDesignerPage />
             </ProtectedRoute>
           }
         />

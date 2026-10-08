@@ -72,9 +72,21 @@ will be enforced in Design/Construction; Security rules skipped per user opt-out
 - [x] Infrastructure Design - COMPLETE (infrastructure-design.md, deployment-architecture.md, shared-infrastructure.md; awaiting approval). Reuse existing stack + separate public-gateway container (Q3=B); new S3 prefix; presigned image URLs; beat schedule entry.
 ### ALL DESIGN STAGES COMPLETE for U1/U2/U3
 - [x] Code Generation U1 (Badge Core) — Part 1 plan approved; Part 2 all 17 steps complete. Verified: app imports OK, 18 tests pass (13 unit + 5 property), frontend tsc clean. Migration 005 written, application deferred to Build & Test. Awaiting user approval to proceed to U2 code gen.
-- [ ] Code Generation U2 (Wallet) — next.
-- [ ] Code Generation U3 (Public + Analytics) — after U2.
-- [ ] Build and Test — after all units.
+- [x] Code Generation U2 (Wallet) — complete.
+- [x] Code Generation U3 (Public + Analytics) — complete.
+- [x] Build and Test — U1–U4 complete; 224 tests passing baseline.
+
+## Active Feature: U5 Certificate Template Designer (COMPLETE)
+Full-stack visual drag-and-drop certificate designer with institution-logo upload.
+Requirements: aidlc-docs/inception/requirements/u5-template-designer-requirements.md
+Design: aidlc-docs/construction/u5-template-designer/design.md
+Plan: aidlc-docs/construction/plans/u5-template-designer-plan.md (all parts A–E complete)
+- Part A: model + migration 008 (certificate_templates, forced RLS; badge_classes.custom_template_id FK) + layout validation/placeholder module + data-driven ReportLab renderer (fallback-safe) + config.
+- Part B: CertificateTemplateService (CRUD/assets/preview/assign/delete-409) + custom-vs-builtin selection in build_certificate + badge:template_manage RBAC + /certificate-templates router.
+- Part C: 51 U5 tests (24 service + 22 layout + 5 property), all pass; 102 passing in the broader badge/certificate/wallet/RBAC sweep.
+- Part D: frontend templates.ts + TemplateDesignerPage (palette/canvas/properties, drag-move-resize, keyboard+ARIA, live preview, logo/background upload, assign) + route/nav + Built-in/Custom dropdown; tsc clean.
+- Part E: end-to-end verified (create→logo→preview→assign→download custom PDF with 3 images + embedded signature; built-in fallback confirmed).
+Decisions: ReportLab data-driven renderer; PDF preview; PNG/JPEG logo (SVG later); custom_template_id FK. Extensions: Security OFF, Resiliency ON, PBT ON.
 - [ ] NFR Requirements - EXECUTE
 - [ ] NFR Design - EXECUTE
 - [ ] Infrastructure Design - EXECUTE
