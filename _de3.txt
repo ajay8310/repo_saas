@@ -1,0 +1,12 @@
+ISSUED (no photo): ['later.anita@example.com', 'later.vikram@example.com']
+PRESIGN (no class): 200
+ATTACH: 202 {'job_id': '71058bfe-6c9d-4470-b99b-a7ddbf8d91ca', 'status': 'pending', 'total': 3, 'errors': []}
+AFTER ATTACH: {'later.vikram@example.com': True, 'later.anita@example.com': False}
+Traceback (most recent call last):
+  File "/app/_decoupled_e2e.py", line 80, in <module>
+    main()
+  File "/app/_decoupled_e2e.py", line 74, in main
+    assert all(have.get(e) for e in emails), have
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'later.vikram@example.com': True, 'later.anita@example.com': False}
+RC=True

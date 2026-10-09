@@ -32,7 +32,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
@@ -246,6 +246,18 @@ class IssuanceService:
     # Read (S13)
     # ------------------------------------------------------------------
 
+    async def ensure_class_issuable(
+        self, tenant_id: UUID, badge_class_id: UUID
+    ) -> BadgeClass:
+        """Validate a badge class exists and is active, else raise (shared check)."""
+        await set_tenant_context(self.db, str(tenant_id))
+        badge_class = await self._get_class(badge_class_id)
+        if badge_class is None:
+            raise IssuanceValidationError("badge class not found")
+        if badge_class.status != "active":
+            raise IssuanceValidationError("cannot issue from an inactive badge class")
+        return badge_class
+
     async def get_assertion(
         self, tenant_id: UUID, assertion_id: UUID
     ) -> BadgeAssertion | None:
@@ -269,6 +281,31 @@ class IssuanceService:
             .limit(limit)
             .offset(offset)
         )
+        return list(result.scalars().all())
+
+    async def list_assertions_for_beneficiary(
+        self,
+        tenant_id: UUID,
+        beneficiary_id: str,
+        active_only: bool = True,
+        badge_class_id: UUID | None = None,
+    ) -> list[BadgeAssertion]:
+        """List a beneficiary's assertions (case-insensitive id match).
+
+        Powers the standalone bulk-photo attach: a photo uploaded later is
+        matched to the recipient's already-issued credential(s). Defaults to
+        active assertions only, optionally scoped to one badge class.
+        """
+        await set_tenant_context(self.db, str(tenant_id))
+        stmt = select(BadgeAssertion).where(
+            func.lower(BadgeAssertion.beneficiary_id) == beneficiary_id.strip().lower()
+        )
+        if active_only:
+            stmt = stmt.where(BadgeAssertion.status == "active")
+        if badge_class_id is not None:
+            stmt = stmt.where(BadgeAssertion.badge_class_id == badge_class_id)
+        stmt = stmt.order_by(BadgeAssertion.issued_at.desc())
+        result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
     async def list_assertions(

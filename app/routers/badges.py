@@ -39,6 +39,15 @@ from app.services.issuance_service import (
     IssuanceValidationError,
     get_issuance_service,
 )
+from app.services.zip_bulk_service import (
+    ZipBulkService,
+    ZipBulkServiceUnavailableError,
+    ZipBulkValidationError,
+    get_zip_bulk_service,
+)
+
+# Photos-only bulk-attach reuses the generic ZIP presign; the badge class is
+# optional there (attach to all of a recipient's active credentials by default).
 
 router = APIRouter(prefix="/badges", tags=["badges"])
 
@@ -118,6 +127,48 @@ class BulkIssueRequest(BaseModel):
 class BulkIssueResponse(BaseModel):
     job_id: str
     status: str
+
+
+class BulkIssueZipPresignRequest(BaseModel):
+    # Optional: required for the issue flow, omitted for a photos-only upload.
+    badge_class_id: str | None = Field(default=None)
+    # Size (bytes) of the ZIP the client intends to upload; checked against the cap.
+    size_bytes: int = Field(..., ge=1)
+
+
+class BulkIssueZipPresignResponse(BaseModel):
+    upload_url: str
+    zip_key: str
+    max_bytes: int
+
+
+class BulkIssueZipRequest(BaseModel):
+    badge_class_id: str = Field(..., min_length=1)
+    # S3 key of the ZIP the client already uploaded via the presigned PUT URL.
+    zip_key: str = Field(..., min_length=1)
+
+
+class BulkIssueZipResponse(BaseModel):
+    job_id: str
+    status: str
+    total: int
+    with_photo: int
+    errors: list[dict] = Field(default_factory=list)
+
+
+class BulkPhotosZipRequest(BaseModel):
+    # S3 key of the photos-only ZIP already uploaded via the presigned PUT URL.
+    zip_key: str = Field(..., min_length=1)
+    # Optional: scope the attach to one badge class; default is all of each
+    # recipient's active credentials.
+    badge_class_id: str | None = Field(default=None)
+
+
+class BulkPhotosZipResponse(BaseModel):
+    job_id: str
+    status: str
+    total: int
+    errors: list[dict] = Field(default_factory=list)
 
 
 class RevokeRequest(BaseModel):
@@ -438,6 +489,168 @@ async def bulk_issue(
     except IssuanceValidationError as exc:
         raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
     return BulkIssueResponse(job_id=job_id, status="pending")
+
+
+@router.post(
+    "/bulk-issue-zip/presign",
+    response_model=BulkIssueZipPresignResponse,
+    dependencies=[Depends(require_permission("badge:bulk_issue"))],
+)
+async def bulk_issue_zip_presign(
+    body: BulkIssueZipPresignRequest,
+    user: TokenPayload = Depends(get_current_user),
+    issuance: IssuanceService = Depends(get_issuance_service),
+    zip_service: ZipBulkService = Depends(get_zip_bulk_service),
+) -> BulkIssueZipPresignResponse:
+    """Issue a presigned PUT URL for a direct-to-S3 bulk ZIP upload (<= 100 MB).
+
+    The browser PUTs the raw ``.zip`` to the returned URL, then calls
+    ``/bulk-issue-zip`` (issue flow) or ``/bulk-photos-zip`` (photos-only) with
+    the returned ``zip_key``. The size cap is enforced here (before a URL is
+    granted) and again when the object is read. ``badge_class_id`` is validated
+    when supplied (issue flow); it is omitted for a photos-only upload.
+    """
+    if body.badge_class_id:
+        try:
+            await issuance.ensure_class_issuable(user.tenant_id, UUID(body.badge_class_id))
+        except IssuanceValidationError as exc:
+            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+
+    try:
+        url, key = zip_service.presign_upload(user.tenant_id, body.size_bytes)
+    except ZipBulkValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+    except ZipBulkServiceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": str(exc)})
+
+    return BulkIssueZipPresignResponse(
+        upload_url=url, zip_key=key, max_bytes=zip_service.settings.bulk_zip_max_bytes
+    )
+
+
+@router.post(
+    "/bulk-issue-zip",
+    response_model=BulkIssueZipResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_permission("badge:bulk_issue"))],
+)
+async def bulk_issue_zip(
+    body: BulkIssueZipRequest,
+    user: TokenPayload = Depends(get_current_user),
+    issuance: IssuanceService = Depends(get_issuance_service),
+    zip_service: ZipBulkService = Depends(get_zip_bulk_service),
+) -> BulkIssueZipResponse:
+    """Bulk-issue badges from an uploaded ZIP of recipients + photos (ZIP flow).
+
+    The client first uploads the ZIP to S3 via a presigned PUT URL (see
+    ``/bulk-issue-zip/presign``) and passes the resulting ``zip_key`` here. The
+    ZIP carries a ``recipients.csv``/``recipients.json`` manifest plus photo
+    images matched per recipient; a one-row manifest + one photo is the single
+    upload case. The server reads the ZIP from S3 (re-checking the 100 MB cap),
+    validates + stages inline, enqueues the issuance + photo-attach Celery job,
+    and deletes the uploaded ZIP. Returns the job id and a parse summary.
+    """
+    # Fail fast if the badge class is missing/inactive before reading anything.
+    try:
+        await issuance.ensure_class_issuable(user.tenant_id, UUID(body.badge_class_id))
+    except IssuanceValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+
+    try:
+        plan = zip_service.parse_and_stage_from_key(user.tenant_id, body.zip_key)
+    except ZipBulkValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+    except ZipBulkServiceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": str(exc)})
+
+    recipients = [
+        {
+            "beneficiary_id": r.beneficiary_id,
+            "photo_key": r.photo_key,
+            "photo_content_type": r.photo_content_type,
+        }
+        for r in plan.recipients
+    ]
+    with_photo = sum(1 for r in plan.recipients if r.photo_key)
+
+    from app.tasks.badge_bulk import bulk_issue_badges_with_photos
+
+    bulk_issue_badges_with_photos.delay(
+        job_id=plan.job_id,
+        tenant_id=str(user.tenant_id),
+        badge_class_id=body.badge_class_id,
+        recipients=recipients,
+        actor_id=user.sub,
+    )
+    return BulkIssueZipResponse(
+        job_id=plan.job_id,
+        status="pending",
+        total=plan.total,
+        with_photo=with_photo,
+        errors=plan.errors,
+    )
+
+
+@router.post(
+    "/bulk-photos-zip",
+    response_model=BulkPhotosZipResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_permission("badge:update"))],
+)
+async def bulk_photos_zip(
+    body: BulkPhotosZipRequest,
+    user: TokenPayload = Depends(get_current_user),
+    issuance: IssuanceService = Depends(get_issuance_service),
+    zip_service: ZipBulkService = Depends(get_zip_bulk_service),
+) -> BulkPhotosZipResponse:
+    """Attach a ZIP of photos to already-issued credentials (later upload).
+
+    Decouples photos from issuance: credentials issued earlier can have their
+    student photos uploaded now. The client first uploads the photos-only ZIP
+    via the presigned PUT URL (``/bulk-issue-zip/presign`` with no badge class),
+    then passes the ``zip_key`` here. Each image is matched to the recipient's
+    existing active credential(s) by email (image filename stem or an optional
+    ``photos.csv``/``photos.json`` map). Matching + attaching run in a Celery
+    job. Returns the job id and how many photos were parsed; recipients with no
+    issued credential yet are reported as job errors.
+    """
+    if body.badge_class_id:
+        try:
+            await issuance.ensure_class_issuable(user.tenant_id, UUID(body.badge_class_id))
+        except IssuanceValidationError as exc:
+            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+
+    try:
+        plan = zip_service.parse_photos_from_key(user.tenant_id, body.zip_key)
+    except ZipBulkValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+    except ZipBulkServiceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": str(exc)})
+
+    photos = [
+        {
+            "beneficiary_id": p.beneficiary_id,
+            "photo_key": p.photo_key,
+            "photo_content_type": p.photo_content_type,
+        }
+        for p in plan.photos
+    ]
+
+    from app.tasks.badge_bulk import bulk_attach_photos
+
+    bulk_attach_photos.delay(
+        job_id=plan.job_id,
+        tenant_id=str(user.tenant_id),
+        photos=photos,
+        actor_id=user.sub,
+        badge_class_id=body.badge_class_id,
+    )
+    return BulkPhotosZipResponse(
+        job_id=plan.job_id,
+        status="pending",
+        total=plan.total,
+        errors=plan.errors,
+    )
 
 
 @router.post(

@@ -532,6 +532,29 @@ class Settings(BaseSettings):
         description="Maximum recipient-photo upload size for certificates, in bytes.",
     )
     # ------------------------------------------------------------------
+    # Bulk issue with photos (ZIP)
+    # ------------------------------------------------------------------
+    bulk_zip_max_bytes: int = Field(
+        default=100 * 1024 * 1024,  # 100 MB compressed upload
+        ge=1024,
+        description="Maximum size of an uploaded bulk-issue ZIP archive, in bytes.",
+    )
+    bulk_zip_presign_ttl_seconds: int = Field(
+        default=900,  # 15 minutes to complete the direct-to-S3 upload
+        ge=60,
+        description="Lifetime of the presigned PUT URL for a bulk-issue ZIP upload (seconds).",
+    )
+    bulk_zip_max_uncompressed_bytes: int = Field(
+        default=1024 * 1024 * 1024,  # 1 GB decompressed cap (zip-bomb guard)
+        ge=1024,
+        description="Maximum total uncompressed size permitted when expanding a bulk ZIP.",
+    )
+    bulk_zip_max_entries: int = Field(
+        default=25_000,
+        ge=1,
+        description="Maximum number of entries permitted in a bulk-issue ZIP (zip-bomb guard).",
+    )
+    # ------------------------------------------------------------------
     # Certificate template designer (U5)
     # ------------------------------------------------------------------
     certificate_template_asset_max_bytes: int = Field(

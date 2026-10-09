@@ -957,3 +957,58 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 ### Deferred (not built)
 - Per-recipient photos in BULK issue. Would need a recipient->photo mapping (ZIP keyed by email, or a photo URL column in the CSV) and photo handling inside `app/tasks/badge_bulk.py`. Current bulk flow is unchanged; bulk-issued credentials get photos via the Documents-page per-row Photo button.
 ---
+## Bulk issue from ZIP (recipients + photos)
+**Timestamp**: 2026-08-24T12:30:00Z
+**User Input**: "Bulk upload of photos and bulk upload of user credentials has to be provided. Both bulk upload and single upload in zip file feature has to be provided."
+**AI Response**: Added a ZIP-based bulk-issue flow: the issuer uploads one ZIP containing a recipients manifest (CSV/JSON) plus photo images matched per recipient. The server validates + stages inline, then a Celery job issues each badge and attaches its photo via the existing single-issue paths. A one-row manifest + one photo is the single-upload case, so one mechanism serves both.
+**Context**: Follow-up to issue-time photos; chose Option A (ZIP) per earlier discussion.
+### Backend
+- `app/config.py`: added `bulk_zip_max_bytes` (200 MB), `bulk_zip_max_uncompressed_bytes` (1 GB), `bulk_zip_max_entries` (25k) — zip-bomb guards.
+- `app/services/zip_bulk_service.py` (new): `ZipBulkService.parse_and_stage` — in-memory ZIP parse with entry-count + decompressed-size caps and a path-traversal guard; finds a `recipients.csv`/`.json` manifest (root-preferred); normalizes rows (id aliases: email/recipient/id); matches each recipient's photo by the manifest `photo` column (basename) or `<beneficiary_id>.<ext>` stem (covers `photos/<id>.png`); per-photo type (png/jpg/jpeg) + size (<= certificate_photo_max_bytes) checks; stages each matched photo to a per-job S3 prefix (`badges/{tenant}/_bulk_staging/{job}/...`, SSE-KMS) and returns a plan (recipients + staged keys + row errors). Recipients without a photo still issue. `ZipBulkValidationError`/`ZipBulkServiceUnavailableError` + `get_zip_bulk_service` DI.
+- `app/tasks/badge_bulk.py`: added `bulk_issue_badges_with_photos` Celery task — issues each recipient via `IssuanceService.issue`, then best-effort attaches the staged photo via `CertificateService.upload_recipient_photo` (fetches staged bytes from S3; a photo failure never fails the badge); independent per-record failures; cleans up the staging prefix at the end. Reuses the single-issue validation/scan/encryption/audit path (no parallel storage).
+- `app/services/issuance_service.py`: added `ensure_class_issuable` (shared active-class check) used to fail fast before staging.
+- `app/routers/badges.py`: new `POST /badges/bulk-issue-zip` (perm `badge:bulk_issue`) accepting `{badge_class_id, zip_base64}` -> 202 with `{job_id, status, total, with_photo, errors[]}`. Validates class, base64-decodes, parses+stages, enqueues the task. Added `BulkIssueZipRequest`/`BulkIssueZipResponse` and the `zip_bulk_service` import (import line reverted once by the editor; re-added and re-grepped).
+### Frontend
+- `frontend/src/lib/badges.ts`: `bulkIssueZip(badgeClassId, zipBase64)` + `BulkIssueZipResult`.
+- `frontend/src/pages/tenant/BadgeClassesPage.tsx`: added a per-row "ZIP" action and a `ZipIssueModal` (pick .zip, client-side type + 200 MB checks, FileReader -> base64, POST). `handleZipIssue` surfaces the server parse summary (total / with-photo / row-error count) and backend validation messages. Imported `FileArchive`.
+### Verification
+- Backend modules import cleanly; config settings load; new Celery task importable. Frontend `tsc --noEmit` clean. Restarted the worker container so it registers the new task.
+- Live E2E as ISSUER: built a real ZIP (recipients.csv + photos/<email>.png and .jpg, plus one recipient with no photo) -> `POST /badges/bulk-issue-zip` 202 `{total:3, with_photo:2, errors:[]}`. Polled assertions: all 3 issued; `has_photo` = Alice True, Bob True (JPEG), Carol False (no photo). Alice's certificate PDF -> 200, 5 embedded images (ZIP photo on the certificate).
+- Temp files cleaned (host + both containers).
+### Notes
+- Single upload is just a one-row manifest + one photo through the same endpoint (no separate code path).
+- Staging photos to S3 keeps the Celery payload small (keys only) and is cleaned up per job.
+---
+## Surface ZIP bulk upload on the Documents page
+**Timestamp**: 2026-08-24T13:05:00Z
+**User Input**: "I still dont see bulk upload feature for photo and data" (screenshot of the Documents/Issued Credentials page)
+**AI Response**: The ZIP bulk-issue feature existed but its only entry point was the per-row "ZIP" button on the Badges page — not discoverable from the Documents page the user was on. Added a prominent "Bulk upload (ZIP)" button + modal directly on the Documents page.
+**Context**: Discoverability fix for the ZIP bulk flow (no backend change).
+### Changes (frontend only)
+- `frontend/src/pages/tenant/DocumentsPage.tsx`: header now has a primary "Bulk upload (ZIP)" button (the "Issue from Badges" link demoted to secondary). Added a `BulkZipModal` with a badge-class picker (loaded via `listBadgeClasses`, active only) + a .zip file picker (client-side .zip type check + 200 MB cap, FileReader -> base64). Submits via the existing `bulkIssueZip` helper to `POST /badges/bulk-issue-zip`, shows the parse summary (total / with-photo / row errors), and refreshes the list. Imported `FileArchive`, `X`, `BadgeClass`, `bulkIssueZip`, `listBadgeClasses`; added `MAX_ZIP_BYTES`.
+### Verification
+- Frontend `tsc --noEmit` clean. Vite HMR applied the DocumentsPage update with no compile errors (confirmed in frontend container logs). Backend `bulk-issue-zip` endpoint was already verified end-to-end in the prior entry.
+- Temp files cleaned.
+### Note
+- The ZIP contents and backend path are unchanged — this only adds a second, more discoverable entry point on the Documents page. The Badges-page per-row "ZIP" button remains.
+---
+## ZIP bulk upload via presigned URL, 100 MB cap
+**Timestamp**: 2026-08-24T13:45:00Z
+**User Input**: "The zip file should be atmost 100 MB in size through presigned url."
+**AI Response**: Lowered the ZIP cap from 200 MB to 100 MB and switched the upload from base64-through-the-API to a direct-to-S3 presigned PUT (browser -> S3), with the API only handling the resulting key. Base64 path removed (no dead code).
+**Context**: Follow-up hardening of the ZIP bulk flow.
+### Backend
+- `app/config.py`: `bulk_zip_max_bytes` 200 MB -> 100 MB; added `bulk_zip_presign_ttl_seconds` (900s).
+- `app/services/zip_bulk_service.py`: added `presign_upload(tenant_id, size_bytes)` (rejects > cap before granting a URL; signs a PUT with ContentType=application/zip + SSE-KMS to `badges/{tenant}/_bulk_uploads/{uuid}/upload.zip`) and `parse_and_stage_from_key(tenant_id, zip_key)` (tenant-prefix + traversal guard on the key; head_object size re-check; reads bytes; delegates to the existing `parse_and_stage`; deletes the uploaded ZIP in a finally).
+- `app/routers/badges.py`: new `POST /badges/bulk-issue-zip/presign` (perm `badge:bulk_issue`) -> `{upload_url, zip_key, max_bytes}`. Reworked `POST /badges/bulk-issue-zip` to accept `{badge_class_id, zip_key}` (was `zip_base64`) and call `parse_and_stage_from_key`. Request models updated (`BulkIssueZipPresignRequest/Response`, `BulkIssueZipRequest.zip_key`).
+### Frontend
+- `frontend/src/lib/badges.ts`: `bulkIssueZip(badgeClassId, file, onProgress?)` now does the 3-step flow — presign, raw `axios.put` to S3 (Content-Type + x-amz-server-side-encryption headers to match the signature, upload progress), then process by key. Imported `axios`.
+- `frontend/src/pages/tenant/DocumentsPage.tsx` and `BadgeClassesPage.tsx`: both ZIP modals now keep the `File` (not base64), cap client-side at 100 MB, and (Documents) show an upload progress bar. Help text updated ("up to 100 MB, uploaded directly to storage").
+### Verification
+- Backend imports clean; config `bulk_zip_max_bytes=104857600`. Frontend `tsc --noEmit` clean. Restarted the API container to load the new endpoints.
+- Live E2E (presigned flow, LocalStack): oversize presign (200 MB) -> 422; normal presign -> 200 (`max_bytes=104857600`); raw PUT to S3 -> 200; process by key -> 202 `{total:2, with_photo:1}`; reprocessing the same key -> 422 (ZIP deleted after read); both recipients issued with correct `has_photo` (alice True, bob False).
+- Temp files cleaned (host + containers).
+### Notes
+- Direct-to-S3 upload avoids base64 inflation and keeps large files off the API process. The uploaded ZIP is deleted immediately after parsing; staged photos (separate prefix) are cleaned up by the Celery job as before.
+- API restart required on deploy to expose the new `/bulk-issue-zip/presign` route and the reworked `/bulk-issue-zip`.
+---

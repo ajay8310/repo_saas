@@ -1,5 +1,7 @@
 /** Badge (Credly-style) types and API client helpers. Mirrors app/routers/badges.py. */
 
+import axios from 'axios'
+
 import api from './api'
 
 export interface BadgeClass {
@@ -120,6 +122,101 @@ export async function bulkIssueBadges(
   const { data } = await api.post('/badges/bulk-issue', {
     badge_class_id: badgeClassId,
     beneficiary_ids: beneficiaryIds,
+  })
+  return data
+}
+
+export interface BulkIssueZipResult {
+  job_id: string
+  status: string
+  total: number
+  with_photo: number
+  errors: { row?: string; entry?: string; error: string }[]
+}
+
+interface BulkIssueZipPresign {
+  upload_url: string
+  zip_key: string
+  max_bytes: number
+}
+
+/**
+ * Bulk-issue from a ZIP of recipients + photos via a presigned S3 upload.
+ *
+ * Three steps: (1) ask the API for a presigned PUT URL (size-checked, <=100 MB),
+ * (2) PUT the raw .zip straight to S3, (3) tell the API to process the uploaded
+ * key. The ZIP holds a recipients.csv/json manifest plus photo images matched
+ * per recipient; a one-row manifest + one photo is the single-upload case.
+ *
+ * ``onProgress`` (0..1) reports the direct-to-S3 upload progress.
+ */
+export async function bulkIssueZip(
+  badgeClassId: string,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<BulkIssueZipResult> {
+  // 1) Presign (server enforces the max size before granting a URL).
+  const { data: presign } = await api.post<BulkIssueZipPresign>(
+    '/badges/bulk-issue-zip/presign',
+    { badge_class_id: badgeClassId, size_bytes: file.size },
+  )
+
+  // 2) Upload the raw ZIP directly to S3 (not through the API). The headers
+  //    must match what the presigned URL was signed with.
+  await axios.put(presign.upload_url, file, {
+    headers: {
+      'Content-Type': 'application/zip',
+      'x-amz-server-side-encryption': 'aws:kms',
+    },
+    onUploadProgress: e => {
+      if (onProgress && e.total) onProgress(e.loaded / e.total)
+    },
+  })
+
+  // 3) Hand the uploaded key back for parsing + issuance.
+  const { data } = await api.post<BulkIssueZipResult>('/badges/bulk-issue-zip', {
+    badge_class_id: badgeClassId,
+    zip_key: presign.zip_key,
+  })
+  return data
+}
+
+export interface BulkPhotosZipResult {
+  job_id: string
+  status: string
+  total: number
+  errors: { entry?: string; beneficiary_id?: string; error: string }[]
+}
+
+/**
+ * Attach a ZIP of photos to already-issued credentials (later, decoupled upload).
+ *
+ * Same presigned-S3 upload as the issue flow, but no badge class is required
+ * (optional ``badgeClassId`` scopes the attach to one class). Each image is
+ * matched to the recipient's existing credential(s) by email — filename stem
+ * (``alice@example.com.png``) or an optional photos.csv/json map.
+ */
+export async function bulkPhotosZip(
+  file: File,
+  badgeClassId?: string,
+  onProgress?: (fraction: number) => void,
+): Promise<BulkPhotosZipResult> {
+  const { data: presign } = await api.post<BulkIssueZipPresign>(
+    '/badges/bulk-issue-zip/presign',
+    { size_bytes: file.size },
+  )
+  await axios.put(presign.upload_url, file, {
+    headers: {
+      'Content-Type': 'application/zip',
+      'x-amz-server-side-encryption': 'aws:kms',
+    },
+    onUploadProgress: e => {
+      if (onProgress && e.total) onProgress(e.loaded / e.total)
+    },
+  })
+  const { data } = await api.post<BulkPhotosZipResult>('/badges/bulk-photos-zip', {
+    zip_key: presign.zip_key,
+    ...(badgeClassId ? { badge_class_id: badgeClassId } : {}),
   })
   return data
 }

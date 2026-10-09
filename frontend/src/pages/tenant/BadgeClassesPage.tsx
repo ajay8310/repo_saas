@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Award, Plus, Edit, Send, Users, Ban, Globe, Building2, FileText, ImagePlus } from 'lucide-react'
+import { Award, Plus, Edit, Send, Users, Ban, Globe, Building2, FileText, ImagePlus, FileArchive } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
 import type { BadgeClass, CertificateTemplate, IssuePhoto } from '@/lib/badges'
 import {
@@ -73,6 +73,7 @@ export default function BadgeClassesPage() {
   const [editing, setEditing] = useState<BadgeClass | null>(null)
   const [issuing, setIssuing] = useState<BadgeClass | null>(null)
   const [bulkIssuing, setBulkIssuing] = useState<BadgeClass | null>(null)
+  const [zipIssuing, setZipIssuing] = useState<BadgeClass | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
   const { toast, notify } = useToast()
 
@@ -254,6 +255,29 @@ export default function BadgeClassesPage() {
     setBulkIssuing(null)
   }
 
+  const handleZipIssue = async (file: File) => {
+    if (!zipIssuing) return
+    if (!live) {
+      notify('Connect to the backend to use ZIP bulk issue.', 'error')
+      setZipIssuing(null)
+      return
+    }
+    try {
+      const { bulkIssueZip } = await import('@/lib/badges')
+      const res = await bulkIssueZip(zipIssuing.id, file)
+      const errNote = res.errors.length ? `, ${res.errors.length} row error(s)` : ''
+      notify(
+        `Queued "${zipIssuing.name}" for ${res.total} recipient(s) ` +
+        `(${res.with_photo} with photo${errNote}).`,
+      )
+      setZipIssuing(null)
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: { message?: string } } } })
+        ?.response?.data?.detail?.message
+      notify(msg ? `ZIP rejected: ${msg}` : 'Could not process the ZIP on the server.', 'error')
+    }
+  }
+
   const handleDeactivate = (badge: BadgeClass) => {
     if (!window.confirm(`Deactivate "${badge.name}"? No new badges can be issued from it.`)) return
     setBadges(prev =>
@@ -293,6 +317,9 @@ export default function BadgeClassesPage() {
       )}
       {bulkIssuing && (
         <BulkIssueModal badge={bulkIssuing} onClose={() => setBulkIssuing(null)} onIssue={handleBulkIssue} />
+      )}
+      {zipIssuing && (
+        <ZipIssueModal badge={zipIssuing} onClose={() => setZipIssuing(null)} onIssue={handleZipIssue} notify={notify} />
       )}
       {editingProfile && (
         <IssuerProfileModal onClose={() => setEditingProfile(false)} onSave={() => { setEditingProfile(false); notify('Issuer profile saved.') }} />
@@ -402,9 +429,18 @@ export default function BadgeClassesPage() {
                 onClick={() => setBulkIssuing(badge)}
                 disabled={badge.status !== 'active'}
                 className="flex items-center gap-1.5 text-sm px-2.5 py-1.5 text-gray-600 hover:text-brand-600 rounded disabled:opacity-40"
-                title="Bulk issue"
+                title="Bulk issue (emails only)"
               >
                 <Users size={15} /> Bulk
+              </button>
+              <button
+                data-testid={`badge-zip-issue-${badge.id}`}
+                onClick={() => setZipIssuing(badge)}
+                disabled={badge.status !== 'active'}
+                className="flex items-center gap-1.5 text-sm px-2.5 py-1.5 text-gray-600 hover:text-brand-600 rounded disabled:opacity-40"
+                title="Bulk issue from ZIP (recipients + photos)"
+              >
+                <FileArchive size={15} /> ZIP
               </button>
               <button
                 data-testid={`badge-visibility-${badge.id}`}
@@ -576,6 +612,80 @@ function BulkIssueModal({
         <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
         <button data-testid="badge-bulk-submit" onClick={() => onIssue(value)}
           className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700">Queue Bulk Issue</button>
+      </div>
+    </Backdrop>
+  )
+}
+
+/** Max ZIP size — mirrors backend bulk_zip_max_bytes (200 MB). */
+const ZIP_MAX_BYTES = 100 * 1024 * 1024
+
+function ZipIssueModal({
+  badge, onClose, onIssue, notify,
+}: {
+  badge: BadgeClass
+  onClose: () => void
+  onIssue: (file: File) => void
+  notify: (msg: string, kind?: 'success' | 'error') => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0]
+    if (!picked) return
+    const isZip = picked.name.toLowerCase().endsWith('.zip') ||
+      picked.type === 'application/zip' || picked.type === 'application/x-zip-compressed'
+    if (!isZip) {
+      notify('Please choose a .zip archive.', 'error')
+      return
+    }
+    if (picked.size > ZIP_MAX_BYTES) {
+      notify('ZIP exceeds the 100 MB limit.', 'error')
+      return
+    }
+    setFile(picked)
+  }
+
+  const submit = async () => {
+    if (!file) return
+    setBusy(true)
+    try {
+      await onIssue(file)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Backdrop>
+      <h2 className="text-lg font-semibold mb-1">Bulk issue "{badge.name}" from ZIP</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Upload a .zip containing a <code>recipients.csv</code> (or .json) manifest and a
+        {' '}<code>photos/</code> folder. Each row needs a <code>beneficiary_id</code>; an
+        optional <code>photo</code> column names the image, else <code>photos/&lt;email&gt;.png</code>
+        {' '}is matched. One recipient + one photo works as a single upload too.
+      </p>
+
+      <input ref={fileRef} type="file" accept=".zip,application/zip" className="hidden"
+        data-testid="badge-zip-input" onChange={onFile} />
+      <button type="button" onClick={() => fileRef.current?.click()}
+        data-testid="badge-zip-pick"
+        className="flex items-center gap-2 text-sm px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 w-full justify-center">
+        <FileArchive size={16} />
+        {file ? `Archive: ${file.name}` : 'Choose ZIP archive'}
+      </button>
+      <p className="text-xs text-gray-400 mt-1">
+        Photos: PNG or JPEG, up to 5 MB each. Archive up to 100 MB (uploaded directly to storage).
+      </p>
+
+      <div className="flex justify-end gap-2 mt-6">
+        <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+        <button data-testid="badge-zip-submit" onClick={submit} disabled={!file || busy}
+          className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40">
+          {busy ? 'Uploading…' : 'Queue ZIP Issue'}
+        </button>
       </div>
     </Backdrop>
   )
