@@ -1,3 +1,0 @@
-LOOKUP later.anita@example.com -> 1 active assertion(s)
-LOOKUP later.vikram@example.com -> 1 active assertion(s)
-RESULT: {'job_id': '08204c1d-d982-4642-8dbb-0442bacc0f68', 'total': 2, 'matched_count': 2, 'unmatched_count': 0, 'attached_count': 2, 'failed_count': 0, 'errors': []}

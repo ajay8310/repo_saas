@@ -1,2 +1,0 @@
-﻿repo_as_saas-api-1
-repo_as_saas-worker-1

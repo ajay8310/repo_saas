@@ -1012,3 +1012,25 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 - Direct-to-S3 upload avoids base64 inflation and keeps large files off the API process. The uploaded ZIP is deleted immediately after parsing; staged photos (separate prefix) are cleaned up by the Celery job as before.
 - API restart required on deploy to expose the new `/bulk-issue-zip/presign` route and the reworked `/bulk-issue-zip`.
 ---
+## Decouple photos from data: standalone bulk photo upload (later, by email)
+**Timestamp**: 2026-08-24T14:40:00Z
+**User Input**: "It is not necessary that photo and data will be uploaded at the same time. It may be uploaded at different times. Please incorporate these changes."
+**AI Response**: Added a standalone bulk-photo upload that attaches photos to ALREADY-ISSUED credentials, matched by recipient email — so credentials and photos can be uploaded at different times (either order). Reuses the presigned-S3 upload (100 MB) and the single-issue photo path. Default: a photo attaches to ALL of a recipient's active credentials; optional badge-class scope.
+**Context**: Decoupling follow-up to the ZIP bulk flow.
+### Backend
+- `app/services/issuance_service.py`: added `list_assertions_for_beneficiary` (case-insensitive email match, active-only, optional class scope); imported `func`.
+- `app/services/zip_bulk_service.py`: added `StagedPhoto`/`ZipPhotosPlan`, `parse_photos_from_key` + `parse_photos` (photos-only ZIP: no manifest required; recipient email from image filename stem or an optional `photos.csv`/`photos.json` filename->email map), and shared helpers `_open_zip`/`_safe_infos`/`_check_photo_bytes`/`_put_staged_photo` (refactored out of `parse_and_stage`).
+- `app/tasks/badge_bulk.py`: added `bulk_attach_photos` task — matches each staged photo to the recipient's existing active assertion(s) by email and attaches to all of them; recipients with no credential are reported as job errors (unmatched). Added `_attach_with_retry` (fresh session + CertificateService per attempt; retries transient `CertificateServiceUnavailableError`/unknown with backoff; validation/not-found fail fast) to fix an observed intermittent miss under the Celery prefork worker.
+- `app/routers/badges.py`: new `POST /badges/bulk-photos-zip` (perm `badge:update`) taking `{zip_key, badge_class_id?}`; made the shared presign endpoint's `badge_class_id` optional (omitted for photos-only). Request/response models `BulkPhotosZipRequest/Response`.
+### Frontend
+- `frontend/src/lib/badges.ts`: `bulkPhotosZip(file, badgeClassId?, onProgress?)` — presign (no class) -> PUT raw to S3 -> process by key; `BulkPhotosZipResult`.
+- `frontend/src/pages/tenant/DocumentsPage.tsx`: added a "Bulk photos (ZIP)" button + `BulkPhotosModal` (optional badge-class scope, .zip picker, 100 MB cap, progress bar). Reports photos queued and how many recipients had no credential yet.
+### Verification
+- Backend imports clean. Frontend `tsc --noEmit` clean. Restarted API + worker to load the new endpoint/task.
+- Found + fixed a real bug: first worker-path E2E attached 1 of 2 (second recipient intermittently missed) — a transient under Celery prefork, confirmed by running the task directly (synchronous) which attached 2/2 cleanly. Added per-record retry.
+- Round-2 worker-path E2E: issued 6 recipients WITHOUT photos (`has_photo=false`), uploaded a photos-only ZIP later, polled -> ATTACHED 6/6, `errors: []`. Also verified a photo for a recipient with no credential is reported unmatched (not attached).
+- Temp files cleaned (host + container).
+### Decisions / notes
+- Matching is by email (filename stem `alice@example.com.png` or a `photos.csv` map). Default attaches to all of a recipient's active credentials; a badge-class filter is available.
+- API + worker restart required on deploy (new route + new task).
+---
