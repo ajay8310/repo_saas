@@ -221,39 +221,40 @@ export default function DocumentsPage() {
         data-testid="photo-file-input"
       />
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">Issued Credentials</h1>
           <p className="text-gray-500 mt-1">
             Every issued credential has a certificate PDF and a badge (PNG + JSON). Upload a
             student photo to have it printed on the certificate.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             data-testid="docs-bulk-upload"
             onClick={() => setShowBulk(true)}
-            className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg hover:bg-brand-700 transition"
+            className="flex items-center gap-2 whitespace-nowrap bg-brand-600 text-white px-3.5 py-2.5 rounded-lg hover:bg-brand-700 transition"
             title="Issue credentials (and optionally their photos) from one ZIP"
           >
-            <FileArchive size={18} />
-            Bulk upload (ZIP)
+            <FileArchive size={18} className="shrink-0" />
+            Bulk upload
           </button>
           <button
             data-testid="docs-bulk-photos"
             onClick={() => setShowPhotos(true)}
-            className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 transition"
+            className="flex items-center gap-2 whitespace-nowrap border border-gray-300 text-gray-700 px-3.5 py-2.5 rounded-lg hover:bg-gray-50 transition"
             title="Attach photos to already-issued credentials (upload photos later)"
           >
-            <ImagePlus size={18} />
-            Bulk photos (ZIP)
+            <ImagePlus size={18} className="shrink-0" />
+            Bulk photos
           </button>
           <Link
             to="/badges"
-            className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 transition"
+            className="flex items-center gap-2 whitespace-nowrap border border-gray-300 text-gray-700 px-3.5 py-2.5 rounded-lg hover:bg-gray-50 transition"
+            title="Issue a badge to a recipient from the Badges page"
           >
-            <BadgeIcon size={18} />
-            Issue from Badges
+            <BadgeIcon size={18} className="shrink-0" />
+            Issue
           </Link>
         </div>
       </div>
