@@ -11,7 +11,6 @@ import BadgeClassesPage from './pages/tenant/BadgeClassesPage'
 import DocumentsPage from './pages/tenant/DocumentsPage'
 import AuditLogsPage from './pages/tenant/AuditLogsPage'
 import WebhooksPage from './pages/tenant/WebhooksPage'
-import MyDocumentsPage from './pages/beneficiary/MyDocumentsPage'
 import WalletPage from './pages/beneficiary/WalletPage'
 import NotificationsPage from './pages/beneficiary/NotificationsPage'
 import VerifyPage from './pages/public/VerifyPage'
@@ -124,14 +123,9 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="my-documents"
-          element={
-            <ProtectedRoute requiredRoles={['beneficiary']}>
-              <MyDocumentsPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* My Documents was consolidated into the single credentials page.
+            Keep the old path working by redirecting it to the wallet. */}
+        <Route path="my-documents" element={<Navigate to="/wallet" replace />} />
         <Route
           path="wallet"
           element={

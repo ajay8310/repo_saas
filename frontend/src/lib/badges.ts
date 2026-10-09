@@ -29,6 +29,7 @@ export interface Assertion {
   public: boolean
   revoked_at: string | null
   revocation_reason: string | null
+  has_photo?: boolean
 }
 
 export interface IssuerProfile {
@@ -94,13 +95,20 @@ export async function uploadBadgeImage(
 
 // --- Issuance ---
 
+export interface IssuePhoto {
+  base64: string
+  contentType: 'image/png' | 'image/jpeg'
+}
+
 export async function issueBadge(
   badgeClassId: string,
   beneficiaryId: string,
+  photo?: IssuePhoto,
 ): Promise<Assertion> {
   const { data } = await api.post<Assertion>('/badges/issue', {
     badge_class_id: badgeClassId,
     beneficiary_id: beneficiaryId,
+    ...(photo ? { photo_base64: photo.base64, photo_content_type: photo.contentType } : {}),
   })
   return data
 }
@@ -178,8 +186,8 @@ export async function downloadCertificate(assertionId: string): Promise<Blob> {
   return data as Blob
 }
 
-/** Trigger a browser download for a PDF blob. */
-export function savePdfBlob(blob: Blob, filename: string): void {
+/** Trigger a browser download for a blob (PDF, PNG, JSON — any content). */
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -188,4 +196,44 @@ export function savePdfBlob(blob: Blob, filename: string): void {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+/** @deprecated use saveBlob — kept for existing callers. */
+export const savePdfBlob = saveBlob
+
+// --- Issued assertions (Documents list) + badge downloads (U6) ---
+
+export interface AssertionListItem {
+  assertion_id: string
+  badge_class_id: string
+  badge_name: string
+  beneficiary_id: string
+  status: 'active' | 'revoked' | 'expired'
+  issued_at: string | null
+  expires_at: string | null
+  public: boolean
+  revoked_at: string | null
+  has_photo: boolean
+}
+
+/** List all issued assertions for the tenant (issuer Documents list). */
+export async function listAssertions(): Promise<AssertionListItem[]> {
+  const { data } = await api.get<AssertionListItem[]>('/badges/assertions')
+  return data
+}
+
+/** Download the baked Open Badges PNG for an assertion (issuer view). */
+export async function downloadBadgePng(assertionId: string): Promise<Blob> {
+  const { data } = await api.get(`/badges/assertions/${assertionId}/badge.png`, {
+    responseType: 'blob',
+  })
+  return data as Blob
+}
+
+/** Download the Open Badges 2.0 assertion JSON for an assertion (issuer view). */
+export async function downloadBadgeJson(assertionId: string): Promise<Blob> {
+  const { data } = await api.get(`/badges/assertions/${assertionId}/badge.json`, {
+    responseType: 'blob',
+  })
+  return data as Blob
 }

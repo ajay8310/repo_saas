@@ -12,6 +12,13 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    // On Windows+Docker bind mounts, native filesystem events don't cross into
+    // the Linux container, so Vite's watcher never sees host edits and HMR goes
+    // stale. Polling makes change detection reliable inside the container.
+    watch: {
+      usePolling: true,
+      interval: 300,
+    },
     proxy: {
       '/api': {
         // The dev server runs inside the `frontend` container on the compose

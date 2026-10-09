@@ -87,6 +87,19 @@ Plan: aidlc-docs/construction/plans/u5-template-designer-plan.md (all parts A–
 - Part D: frontend templates.ts + TemplateDesignerPage (palette/canvas/properties, drag-move-resize, keyboard+ARIA, live preview, logo/background upload, assign) + route/nav + Built-in/Custom dropdown; tsc clean.
 - Part E: end-to-end verified (create→logo→preview→assign→download custom PDF with 3 images + embedded signature; built-in fallback confirmed).
 Decisions: ReportLab data-driven renderer; PDF preview; PNG/JPEG logo (SVG later); custom_template_id FK. Extensions: Security OFF, Resiliency ON, PBT ON.
+
+## Active Feature: U6 Dual Credential Downloads + Live Documents (COMPLETE)
+Per issued assertion: certificate PDF (U4) + badge in two OB2.0 forms (baked PNG + JSON).
+Documents page rewired from demo rows to live issued assertions.
+Requirements: aidlc-docs/inception/requirements/u6-dual-credentials-requirements.md
+Design: aidlc-docs/construction/u6-dual-credentials/design.md
+Plan: aidlc-docs/construction/plans/u6-dual-credentials-plan.md (all parts A–E complete)
+- Part A: badge_baker.py (OB2.0 PNG baking, round-trip + SVG reject); CertificateService.build_badge_json/build_badge_png + _assertion_doc (authenticated, non-public); IssuanceService.list_assertions. No migration.
+- Part B: GET /badges/assertions + /badges/assertions/{id}/badge.json|png (badge:certificate); /wallet/{id}/badge.json|png (badge:wallet_certificate, owner-checked). 404 not-found, 422 not-bakeable. Also fixed seed_demo to re-attach a missing S3 badge image.
+- Part C: 25 U6 tests (11 baker + 11 service + 3 property); broader badge/cert/wallet sweep 121 passed, 0 failed.
+- Part D: lib helpers (listAssertions, downloadBadgePng/Json, saveBlob; wallet badge helpers); DocumentsPage rewritten to "Issued Credentials" (live, PDF+Badge-PNG+Badge-JSON+Revoke, dropped demo/stub/DigiLocker); WalletPage badge buttons. tsc clean.
+- Part E: end-to-end verified (issuer + beneficiary downloads of all three; baked PNG round-trips; no-image→422/json-200; cross-owner 404).
+Decisions: Q1=C (JSON+baked PNG), no ZIP, Q3=A (Documents lists assertions), issuer+beneficiary, reuse cert permissions. Caveats: SVG badge images can't be baked (422); OB JSON is HostedBadge-verified (not JWS); recipient salt non-deterministic per download.
 - [ ] NFR Requirements - EXECUTE
 - [ ] NFR Design - EXECUTE
 - [ ] Infrastructure Design - EXECUTE

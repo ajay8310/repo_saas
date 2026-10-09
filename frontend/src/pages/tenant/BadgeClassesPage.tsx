@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Award, Plus, Edit, Send, Users, Ban, Globe, Building2, FileText } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Award, Plus, Edit, Send, Users, Ban, Globe, Building2, FileText, ImagePlus } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
-import type { BadgeClass, CertificateTemplate } from '@/lib/badges'
+import type { BadgeClass, CertificateTemplate, IssuePhoto } from '@/lib/badges'
 import {
   BULK_ISSUE_MAX,
   CERTIFICATE_TEMPLATES,
@@ -20,6 +20,23 @@ import { assignTemplateToClass, listTemplates } from '@/lib/templates'
  * the tenant issuer profile. Seeded with demo rows so the page is useful before
  * the backend is populated; live wiring uses the helpers in lib/badges.ts.
  */
+
+/** Max student-photo size — mirrors backend certificate_photo_max_bytes (5 MB). */
+const ISSUE_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+
+/** Read a File as base64 (without the data: URL prefix) for the JSON upload API. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read file'))
+    reader.onload = () => {
+      const result = String(reader.result)
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.readAsDataURL(file)
+  })
+}
 
 const INITIAL_BADGES: BadgeClass[] = [
   {
@@ -177,7 +194,7 @@ export default function BadgeClassesPage() {
     setEditing(null)
   }
 
-  const handleIssue = async (beneficiaryId: string) => {
+  const handleIssue = async (beneficiaryId: string, photo?: IssuePhoto) => {
     if (!issuing) return
     const id = beneficiaryId.trim()
     if (!id.includes('@')) {
@@ -187,16 +204,28 @@ export default function BadgeClassesPage() {
     if (live) {
       try {
         const { issueBadge } = await import('@/lib/badges')
-        const a = await issueBadge(issuing.id, id)
-        notify(`Issued "${issuing.name}" to ${id} (assertion ${a.assertion_id.slice(0, 8)}…).`)
+        const a = await issueBadge(issuing.id, id, photo)
+        const photoNote = a.has_photo ? ' with photo' : ''
+        notify(`Issued "${issuing.name}" to ${id}${photoNote} (assertion ${a.assertion_id.slice(0, 8)}…).`)
         setIssuing(null)
         return
-      } catch {
-        notify('Could not issue on the server.', 'error')
+      } catch (e: unknown) {
+        const code = (e as { response?: { data?: { detail?: { code?: string } } } })?.response?.data?.detail?.code
+        notify(
+          code === 'PHOTO_REJECTED'
+            ? 'Badge issued, but the photo was rejected. Add it from the Documents page.'
+            : code === 'SERVICE_UNAVAILABLE'
+              ? 'Badge issued, but the photo could not be scanned. Add it from the Documents page.'
+              : 'Could not issue on the server.',
+          'error',
+        )
+        if (code === 'PHOTO_REJECTED' || code === 'SERVICE_UNAVAILABLE') setIssuing(null)
       }
     }
-    notify(`Issued "${issuing.name}" to ${id}.`)
-    setIssuing(null)
+    if (!live) {
+      notify(`Issued "${issuing.name}" to ${id}.`)
+      setIssuing(null)
+    }
   }
 
   const handleBulkIssue = async (raw: string) => {
@@ -260,7 +289,7 @@ export default function BadgeClassesPage() {
         />
       )}
       {issuing && (
-        <IssueModal badge={issuing} onClose={() => setIssuing(null)} onIssue={handleIssue} />
+        <IssueModal badge={issuing} onClose={() => setIssuing(null)} onIssue={handleIssue} notify={notify} />
       )}
       {bulkIssuing && (
         <BulkIssueModal badge={bulkIssuing} onClose={() => setBulkIssuing(null)} onIssue={handleBulkIssue} />
@@ -469,22 +498,60 @@ function BadgeFormModal({
 }
 
 function IssueModal({
-  badge, onClose, onIssue,
+  badge, onClose, onIssue, notify,
 }: {
   badge: BadgeClass
   onClose: () => void
-  onIssue: (beneficiaryId: string) => void
+  onIssue: (beneficiaryId: string, photo?: IssuePhoto) => void
+  notify: (msg: string, kind?: 'success' | 'error') => void
 }) {
   const [value, setValue] = useState('')
+  const [photo, setPhoto] = useState<IssuePhoto | null>(null)
+  const [photoName, setPhotoName] = useState<string>('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const onPhotoPicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+      notify('Photo must be a PNG or JPEG image.', 'error')
+      return
+    }
+    if (file.size > ISSUE_PHOTO_MAX_BYTES) {
+      notify('Photo exceeds the 5 MB limit.', 'error')
+      return
+    }
+    const base64 = await fileToBase64(file)
+    setPhoto({ base64, contentType: file.type === 'image/png' ? 'image/png' : 'image/jpeg' })
+    setPhotoName(file.name)
+  }
+
   return (
     <Backdrop>
       <h2 className="text-lg font-semibold mb-1">Issue "{badge.name}"</h2>
       <p className="text-sm text-gray-500 mb-4">Award this badge to a single recipient.</p>
       <input data-testid="badge-issue-recipient" value={value} onChange={e => setValue(e.target.value)}
         placeholder="recipient@example.com" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden"
+        data-testid="badge-issue-photo-input" onChange={onPhotoPicked} />
+      <div className="mt-3">
+        <button type="button" onClick={() => fileRef.current?.click()}
+          data-testid="badge-issue-photo-pick"
+          className="flex items-center gap-2 text-sm px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 w-full justify-center">
+          <ImagePlus size={16} />
+          {photo ? `Student photo: ${photoName}` : 'Add student photo (optional)'}
+        </button>
+        {photo && (
+          <button type="button" onClick={() => { setPhoto(null); setPhotoName(''); if (fileRef.current) fileRef.current.value = '' }}
+            className="text-xs text-gray-500 hover:text-red-600 mt-1">Remove photo</button>
+        )}
+        <p className="text-xs text-gray-400 mt-1">PNG or JPEG, up to 5 MB. Printed on the certificate.</p>
+      </div>
+
       <div className="flex justify-end gap-2 mt-6">
         <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-        <button data-testid="badge-issue-submit" onClick={() => onIssue(value)}
+        <button data-testid="badge-issue-submit" onClick={() => onIssue(value, photo ?? undefined)}
           className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700">Issue</button>
       </div>
     </Backdrop>

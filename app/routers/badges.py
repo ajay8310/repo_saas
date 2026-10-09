@@ -8,6 +8,7 @@ retrieval lives in ``app.routers.public_badges`` (unauthenticated).
 from __future__ import annotations
 
 import base64
+from dataclasses import asdict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.dependencies.auth import TokenPayload, get_current_user
 from app.rbac.permissions import require_permission
+from app.services.badge_baker import BadgeImageNotBakeableError
 from app.services.badge_service import (
     BadgeNotFoundError,
     BadgeService,
@@ -91,6 +93,11 @@ class ImageUploadRequest(BaseModel):
 class IssueRequest(BaseModel):
     badge_class_id: str = Field(..., min_length=1)
     beneficiary_id: str = Field(..., min_length=1, max_length=512)
+    # Optional student photo supplied at issue-time (U4 Q6). Both must be
+    # present together; the photo is attached to the new assertion so the first
+    # certificate download already shows it.
+    photo_base64: str | None = Field(default=None)
+    photo_content_type: str | None = Field(default=None, pattern=r"^image/(png|jpe?g)$")
 
 
 class IssueResponse(BaseModel):
@@ -100,6 +107,7 @@ class IssueResponse(BaseModel):
     issued_at: str
     expires_at: str | None
     status: str
+    has_photo: bool = False
 
 
 class BulkIssueRequest(BaseModel):
@@ -126,6 +134,21 @@ class AssertionResponse(BaseModel):
     public: bool
     revoked_at: str | None
     revocation_reason: str | None
+
+
+class AssertionListItem(BaseModel):
+    """A row for the issuer Documents list (assertion + badge-class summary, U6)."""
+
+    assertion_id: str
+    badge_class_id: str
+    badge_name: str
+    beneficiary_id: str
+    status: str
+    issued_at: str | None
+    expires_at: str | None
+    public: bool
+    revoked_at: str | None
+    has_photo: bool = False
 
 
 class VisibilityRequest(BaseModel):
@@ -323,19 +346,74 @@ async def issue_badge(
     body: IssueRequest,
     user: TokenPayload = Depends(get_current_user),
     service: IssuanceService = Depends(get_issuance_service),
+    cert_service: CertificateService = Depends(get_certificate_service),
 ) -> IssueResponse:
-    """Issue a single badge to a beneficiary (FR-4.1)."""
+    """Issue a single badge to a beneficiary (FR-4.1), optionally with a photo.
+
+    When ``photo_base64`` + ``photo_content_type`` are supplied, the student
+    photo is attached to the freshly issued assertion via the same validated,
+    malware-scanned, encrypted path as the standalone photo endpoint, so the
+    first certificate download already carries the photo.
+    """
+    if (body.photo_base64 is None) != (body.photo_content_type is None):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "VALIDATION_ERROR",
+                "message": "photo_base64 and photo_content_type must be provided together",
+            },
+        )
+
+    actor_role = user.roles[0] if user.roles else "issuer"
     try:
         result = await service.issue(
             tenant_id=user.tenant_id,
             badge_class_id=UUID(body.badge_class_id),
             beneficiary_id=body.beneficiary_id,
             actor_id=user.sub,
-            actor_role=user.roles[0] if user.roles else "issuer",
+            actor_role=actor_role,
         )
     except IssuanceValidationError as exc:
         raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
-    return IssueResponse(**result.__dict__)
+
+    has_photo = False
+    if body.photo_base64 is not None and body.photo_content_type is not None:
+        try:
+            content = base64.b64decode(body.photo_base64)
+        except Exception:
+            raise HTTPException(status_code=422, detail={"code": "INVALID_CONTENT"})
+        try:
+            await cert_service.upload_recipient_photo(
+                tenant_id=user.tenant_id,
+                assertion_id=UUID(result.assertion_id),
+                content=content,
+                content_type=body.photo_content_type,
+                actor_id=user.sub,
+                actor_role=actor_role,
+            )
+            has_photo = True
+        except CertificateValidationError as exc:
+            # The badge is already issued; surface the photo problem without
+            # losing the assertion. The issuer can retry via the Documents page.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "PHOTO_REJECTED",
+                    "message": str(exc),
+                    "assertion_id": result.assertion_id,
+                },
+            )
+        except CertificateServiceUnavailableError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": str(exc),
+                    "assertion_id": result.assertion_id,
+                },
+            )
+
+    return IssueResponse(**asdict(result), has_photo=has_photo)
 
 
 @router.post(
@@ -401,6 +479,48 @@ async def get_assertion(
     return _assertion_response(assertion)
 
 
+@router.get("/assertions", response_model=list[AssertionListItem])
+async def list_assertions(
+    status_filter: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    user: TokenPayload = Depends(get_current_user),
+    service: IssuanceService = Depends(get_issuance_service),
+    badge_service: BadgeService = Depends(get_badge_service),
+    _: TokenPayload = Depends(require_permission("badge:read")),
+) -> list[AssertionListItem]:
+    """List all issued assertions for the tenant, newest first (U6).
+
+    Powers the issuer Documents page. Badge-class names are resolved with a
+    single keyed lookup (no join), mirroring the wallet list.
+    """
+    assertions = await service.list_assertions(
+        tenant_id=user.tenant_id, status=status_filter, limit=limit, offset=offset
+    )
+    if not assertions:
+        return []
+    class_ids = {a.badge_class_id for a in assertions}
+    names: dict = {}
+    for cid in class_ids:
+        bc = await badge_service.get_badge_class(user.tenant_id, cid)
+        names[cid] = bc.name if bc else "Unknown Badge"
+    return [
+        AssertionListItem(
+            assertion_id=str(a.id),
+            badge_class_id=str(a.badge_class_id),
+            badge_name=names.get(a.badge_class_id, "Unknown Badge"),
+            beneficiary_id=a.beneficiary_id,
+            status=a.status,
+            issued_at=a.issued_at.isoformat() if a.issued_at else None,
+            expires_at=a.expires_at.isoformat() if a.expires_at else None,
+            public=a.public,
+            revoked_at=a.revoked_at.isoformat() if a.revoked_at else None,
+            has_photo=bool(a.recipient_photo_s3_key),
+        )
+        for a in assertions
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Issuer profile (FR-3)
 # ---------------------------------------------------------------------------
@@ -414,7 +534,7 @@ async def get_issuer_profile(
 ) -> IssuerProfileResponse:
     """Read the tenant's Open Badges issuer profile (FR-3)."""
     profile = await service.get_issuer_profile(user.tenant_id)
-    return IssuerProfileResponse(**profile.__dict__)
+    return IssuerProfileResponse(**asdict(profile))
 
 
 @router.put(
@@ -438,7 +558,7 @@ async def set_issuer_profile(
         )
     except BadgeNotFoundError:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
-    return IssuerProfileResponse(**profile.__dict__)
+    return IssuerProfileResponse(**asdict(profile))
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +667,66 @@ async def download_certificate(
         content=cert.content,
         media_type=cert.media_type,
         headers={"Content-Disposition": f'attachment; filename="{cert.filename}"'},
+    )
+
+
+@router.get(
+    "/assertions/{assertion_id}/badge.json",
+    dependencies=[Depends(require_permission("badge:certificate"))],
+)
+async def download_badge_json(
+    assertion_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    service: CertificateService = Depends(get_certificate_service),
+) -> Response:
+    """Download the Open Badges 2.0 assertion JSON for an assertion (U6)."""
+    try:
+        badge = await service.build_badge_json(
+            tenant_id=user.tenant_id,
+            assertion_id=assertion_id,
+            actor_id=user.sub,
+            actor_role=user.roles[0] if user.roles else "issuer",
+        )
+    except CertificateNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
+    return Response(
+        content=badge.content,
+        media_type=badge.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{badge.filename}"'},
+    )
+
+
+@router.get(
+    "/assertions/{assertion_id}/badge.png",
+    dependencies=[Depends(require_permission("badge:certificate"))],
+)
+async def download_badge_png(
+    assertion_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    service: CertificateService = Depends(get_certificate_service),
+) -> Response:
+    """Download a baked Open Badges PNG for an assertion (U6).
+
+    422 when the badge class has no image or the image is not a PNG (e.g. SVG);
+    the JSON download still works in that case.
+    """
+    try:
+        badge = await service.build_badge_png(
+            tenant_id=user.tenant_id,
+            assertion_id=assertion_id,
+            actor_id=user.sub,
+            actor_role=user.roles[0] if user.roles else "issuer",
+        )
+    except CertificateNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
+    except BadgeImageNotBakeableError as exc:
+        raise HTTPException(
+            status_code=422, detail={"code": "NOT_BAKEABLE", "message": str(exc)}
+        )
+    return Response(
+        content=badge.content,
+        media_type=badge.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{badge.filename}"'},
     )
 
 

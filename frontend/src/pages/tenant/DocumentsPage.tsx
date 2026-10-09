@@ -1,202 +1,220 @@
-import { useState } from 'react'
-import { Upload, Search, Ban, Download, Send } from 'lucide-react'
-import UploadDocumentModal from '@/components/UploadDocumentModal'
-import BulkUploadModal from '@/components/BulkUploadModal'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Search, Ban, FileText, Award, Braces, Award as BadgeIcon, ImagePlus, Check } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
+import type { AssertionListItem } from '@/lib/badges'
 import {
-  type BulkOutcome,
-  type DocumentRow,
-  downloadAsJson,
-  generateCredentialId,
-  todayIso,
-} from '@/lib/documents'
+  downloadBadgeJson,
+  downloadBadgePng,
+  downloadCertificate,
+  listAssertions,
+  revokeAssertion,
+  saveBlob,
+  uploadRecipientPhoto,
+} from '@/lib/badges'
 
-interface ExtendedDocRow extends DocumentRow {
-  digilocker_status?: 'pending' | 'success' | 'failed' | 'not_pushed'
+/** Max student-photo size — mirrors backend certificate_photo_max_bytes (5 MB). */
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+const ALLOWED_PHOTO_TYPES = ['image/png', 'image/jpeg'] as const
+
+/** Read a File as base64 (without the data: URL prefix) for the JSON upload API. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read file'))
+    reader.onload = () => {
+      const result = String(reader.result)
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
-const INITIAL_DOCS: ExtendedDocRow[] = [
-  { credential_id: 'cred-001', schema_name: 'Degree Certificate', beneficiary_id: 'john.doe@email.com', status: 'stored', issued_at: '2025-06-01', digilocker_status: 'success' },
-  { credential_id: 'cred-002', schema_name: 'Professional License', beneficiary_id: 'jane.smith@email.com', status: 'stored', issued_at: '2025-05-28', digilocker_status: 'pending' },
-  { credential_id: 'cred-003', schema_name: 'Degree Certificate', beneficiary_id: 'bob.wilson@email.com', status: 'revoked', issued_at: '2025-04-15', digilocker_status: 'not_pushed' },
-  { credential_id: 'cred-004', schema_name: 'Land Title Deed', beneficiary_id: 'alice.brown@email.com', status: 'stored', issued_at: '2025-03-20', digilocker_status: 'success' },
-  { credential_id: 'cred-005', schema_name: 'Professional License', beneficiary_id: 'charlie.davis@email.com', status: 'stored', issued_at: '2025-02-10', digilocker_status: 'not_pushed' },
-]
+/**
+ * Issued Credentials (Documents) — live view of real badge assertions (U6).
+ *
+ * Each issued credential offers two downloadable credentials: the issuer-signed
+ * certificate PDF (QR + digital signature) and the badge — in its two Open
+ * Badges forms (a baked PNG and the raw OB2.0 JSON). Issuance itself lives on
+ * the Badges page; this page lists what has been issued and lets you download,
+ * verify, and revoke.
+ */
 
-const digilockerStatusColors: Record<string, string> = {
-  success: 'bg-blue-100 text-blue-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  failed: 'bg-red-100 text-red-800',
-  not_pushed: 'bg-gray-100 text-gray-500',
-}
-
-const digilockerStatusLabels: Record<string, string> = {
-  success: 'Pushed',
-  pending: 'Pushing...',
-  failed: 'Failed',
-  not_pushed: '—',
+const statusColors: Record<string, string> = {
+  active: 'bg-green-100 text-green-800',
+  revoked: 'bg-red-100 text-red-700',
+  expired: 'bg-gray-100 text-gray-500',
 }
 
 export default function DocumentsPage() {
-  const [docs, setDocs] = useState<ExtendedDocRow[]>(INITIAL_DOCS)
+  const [rows, setRows] = useState<AssertionListItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [showUpload, setShowUpload] = useState(false)
-  const [showBulk, setShowBulk] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const { toast, notify } = useToast()
 
-  const handleUpload = (schemaName: string, beneficiaryId: string, pushToDigiLocker: boolean) => {
-    const row: ExtendedDocRow = {
-      credential_id: generateCredentialId(docs),
-      schema_name: schemaName,
-      beneficiary_id: beneficiaryId,
-      status: 'stored',
-      issued_at: todayIso(),
-      digilocker_status: pushToDigiLocker ? 'pending' : 'not_pushed',
-    }
-    setDocs(prev => [row, ...prev])
-    setShowUpload(false)
-    const msg = pushToDigiLocker
-      ? `Issued ${row.credential_id} to ${beneficiaryId} — pushing to DigiLocker...`
-      : `Issued ${row.credential_id} to ${beneficiaryId}`
-    notify(msg)
+  // Student-photo upload: a single hidden file input, retargeted per row.
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [photoTargetId, setPhotoTargetId] = useState<string | null>(null)
 
-    // Simulate async DigiLocker push completion
-    if (pushToDigiLocker) {
-      setTimeout(() => {
-        setDocs(prev =>
-          prev.map(d =>
-            d.credential_id === row.credential_id
-              ? { ...d, digilocker_status: 'success' as const }
-              : d,
-          ),
-        )
-      }, 3000)
+  const load = () => {
+    setLoading(true)
+    listAssertions()
+      .then(data => {
+        setRows(Array.isArray(data) ? data : [])
+        setError(false)
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(load, [])
+
+  const shortId = (id: string) => id.slice(0, 8)
+
+  const getCertificate = async (r: AssertionListItem) => {
+    setBusyId(r.assertion_id)
+    try {
+      const blob = await downloadCertificate(r.assertion_id)
+      saveBlob(blob, `certificate-${r.assertion_id}.pdf`)
+      notify('Certificate (PDF) downloaded.')
+    } catch {
+      notify('Could not download the certificate.', 'error')
+    } finally {
+      setBusyId(null)
     }
   }
 
-  const handlePushToDigiLocker = (doc: ExtendedDocRow) => {
-    if (doc.status === 'revoked') {
-      notify('Cannot push a revoked document to DigiLocker.', 'error')
+  const getBadgePng = async (r: AssertionListItem) => {
+    setBusyId(r.assertion_id)
+    try {
+      const blob = await downloadBadgePng(r.assertion_id)
+      saveBlob(blob, `badge-${r.assertion_id}.png`)
+      notify('Badge (PNG) downloaded.')
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status
+      notify(
+        status === 422
+          ? 'This badge has no PNG image to bake. Add a PNG badge image on the Badges page.'
+          : 'Could not download the badge PNG.',
+        'error',
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const getBadgeJson = async (r: AssertionListItem) => {
+    setBusyId(r.assertion_id)
+    try {
+      const blob = await downloadBadgeJson(r.assertion_id)
+      saveBlob(blob, `badge-${r.assertion_id}.json`)
+      notify('Badge (JSON) downloaded.')
+    } catch {
+      notify('Could not download the badge JSON.', 'error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  /** Open the OS file picker for a specific credential's student photo. */
+  const pickPhoto = (r: AssertionListItem) => {
+    setPhotoTargetId(r.assertion_id)
+    // Reset so re-selecting the same file still fires onChange.
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    fileInputRef.current?.click()
+  }
+
+  /** Validate, encode, and upload the chosen student photo for the target row. */
+  const onPhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    const assertionId = photoTargetId
+    setPhotoTargetId(null)
+    if (!file || !assertionId) return
+
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type as (typeof ALLOWED_PHOTO_TYPES)[number])) {
+      notify('Photo must be a PNG or JPEG image.', 'error')
       return
     }
-    setDocs(prev =>
-      prev.map(d =>
-        d.credential_id === doc.credential_id
-          ? { ...d, digilocker_status: 'pending' as const }
-          : d,
-      ),
-    )
-    notify(`Pushing ${doc.credential_id} to DigiLocker...`)
+    if (file.size > MAX_PHOTO_BYTES) {
+      notify('Photo exceeds the 5 MB limit.', 'error')
+      return
+    }
 
-    // Simulate async push
-    setTimeout(() => {
-      setDocs(prev =>
-        prev.map(d =>
-          d.credential_id === doc.credential_id
-            ? { ...d, digilocker_status: 'success' as const }
-            : d,
-        ),
+    setBusyId(assertionId)
+    try {
+      const base64 = await fileToBase64(file)
+      const contentType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+      await uploadRecipientPhoto(assertionId, base64, contentType)
+      notify('Student photo uploaded. It will appear on the certificate.')
+      load()
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      notify(
+        status === 503
+          ? 'Photo could not be scanned right now. Try again shortly.'
+          : 'Could not upload the student photo.',
+        'error',
       )
-    }, 2500)
+    } finally {
+      setBusyId(null)
+    }
   }
 
-  const handleBulkCommit = (schemaName: string, outcome: BulkOutcome) => {
-    // Each record is issued independently — failures don't block the rest
-    // (Req 3.2 / 6.7).
-    const created: DocumentRow[] = []
-    outcome.succeeded.forEach(rec => {
-      created.push({
-        credential_id: generateCredentialId([...docs, ...created]),
-        schema_name: schemaName,
-        beneficiary_id: rec.beneficiary_id,
-        status: 'stored',
-        issued_at: todayIso(),
-      })
-    })
-    setDocs(prev => [...created, ...prev])
-    setShowBulk(false)
-    notify(
-      `Bulk upload: ${created.length} issued, ${outcome.failed.length} failed of ${outcome.total}`,
-    )
-  }
-
-  const handleRevoke = (doc: DocumentRow) => {
-    const reason = window.prompt(
-      `Revocation reason for ${doc.credential_id} (1-500 chars):`,
-    )
+  const revoke = async (r: AssertionListItem) => {
+    const reason = window.prompt(`Revocation reason for ${shortId(r.assertion_id)} (1-500 chars):`)
     if (reason === null) return
     if (!reason.trim() || reason.length > 500) {
       notify('Revocation reason must be 1-500 characters.', 'error')
       return
     }
-    setDocs(prev =>
-      prev.map(d =>
-        d.credential_id === doc.credential_id
-          ? { ...d, status: 'revoked' as const }
-          : d,
-      ),
-    )
-    notify(`Revoked ${doc.credential_id}`)
+    try {
+      await revokeAssertion(r.assertion_id, reason.trim())
+      notify(`Revoked ${shortId(r.assertion_id)}.`)
+      load()
+    } catch {
+      notify('Could not revoke on the server.', 'error')
+    }
   }
 
-  const handleDownload = (doc: DocumentRow) => {
-    downloadAsJson(`${doc.credential_id}.json`, {
-      credential_id: doc.credential_id,
-      schema: doc.schema_name,
-      beneficiary_id: doc.beneficiary_id,
-      status: doc.status,
-      issued_at: doc.issued_at,
-      verification_url: `${window.location.origin}/verify/${doc.credential_id}`,
-      note: 'Demo export. Signed PDF/JSON-LD requires the backend.',
-    })
-    notify(`Downloaded ${doc.credential_id}.json`)
-  }
-
-  const filtered = docs.filter(
-    d =>
-      d.beneficiary_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.schema_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.credential_id.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filtered = rows.filter(
+    r =>
+      r.beneficiary_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.badge_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.assertion_id.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
   return (
     <div>
-      {showUpload && (
-        <UploadDocumentModal
-          onClose={() => setShowUpload(false)}
-          onSubmit={handleUpload}
-        />
-      )}
-      {showBulk && (
-        <BulkUploadModal
-          onClose={() => setShowBulk(false)}
-          onCommit={handleBulkCommit}
-        />
-      )}
-
       <Toast toast={toast} />
+
+      {/* Single hidden file input, retargeted per row for student-photo upload. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg"
+        className="hidden"
+        onChange={onPhotoSelected}
+        data-testid="photo-file-input"
+      />
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
-          <p className="text-gray-500 mt-1">Manage issued credentials and documents</p>
+          <h1 className="text-2xl font-bold text-gray-900">Issued Credentials</h1>
+          <p className="text-gray-500 mt-1">
+            Every issued credential has a certificate PDF and a badge (PNG + JSON). Upload a
+            student photo to have it printed on the certificate.
+          </p>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowBulk(true)}
-            className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 transition"
-          >
-            <Upload size={18} />
-            Bulk Upload
-          </button>
-          <button
-            onClick={() => setShowUpload(true)}
-            className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg hover:bg-brand-700 transition"
-          >
-            <Upload size={18} />
-            Upload Document
-          </button>
-        </div>
+        <Link
+          to="/badges"
+          className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg hover:bg-brand-700 transition"
+        >
+          <BadgeIcon size={18} />
+          Issue from Badges
+        </Link>
       </div>
 
       <div className="flex gap-3 mb-6">
@@ -206,7 +224,7 @@ export default function DocumentsPage() {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by credential, beneficiary, or schema..."
+            placeholder="Search by credential id, beneficiary, or badge..."
             className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none"
           />
         </div>
@@ -217,91 +235,102 @@ export default function DocumentsPage() {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Credential</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Schema</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Badge</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Beneficiary</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">DigiLocker</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Issued</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Downloads</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filtered.map(doc => (
-              <tr key={doc.credential_id} className="hover:bg-gray-50">
+          <tbody className="divide-y divide-gray-100" data-testid="documents-list">
+            {filtered.map(r => (
+              <tr key={r.assertion_id} className="hover:bg-gray-50" data-testid={`doc-row-${r.assertion_id}`}>
                 <td className="px-6 py-4">
-                  <code className="text-sm bg-gray-100 px-2 py-0.5 rounded">
-                    {doc.credential_id}
-                  </code>
+                  <code className="text-sm bg-gray-100 px-2 py-0.5 rounded">{shortId(r.assertion_id)}</code>
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-700">{doc.schema_name}</td>
-                <td className="px-6 py-4 text-sm text-gray-600">{doc.beneficiary_id}</td>
+                <td className="px-6 py-4 text-sm text-gray-700">{r.badge_name}</td>
+                <td className="px-6 py-4 text-sm text-gray-600">{r.beneficiary_id}</td>
                 <td className="px-6 py-4">
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      doc.status === 'stored'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}
-                  >
-                    {doc.status}
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[r.status] || statusColors.expired}`}>
+                    {r.status}
                   </span>
                 </td>
+                <td className="px-6 py-4 text-sm text-gray-500">{r.issued_at?.slice(0, 10)}</td>
                 <td className="px-6 py-4">
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      digilockerStatusColors[doc.digilocker_status || 'not_pushed']
-                    }`}
-                  >
-                    {digilockerStatusLabels[doc.digilocker_status || 'not_pushed']}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500">{doc.issued_at}</td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <button
-                      onClick={() => handleDownload(doc)}
-                      className="p-1.5 text-gray-400 hover:text-brand-600 rounded"
-                      title="Download"
+                      data-testid={`doc-cert-${r.assertion_id}`}
+                      onClick={() => getCertificate(r)}
+                      disabled={busyId === r.assertion_id}
+                      className="flex items-center gap-1 text-xs px-2 py-1 text-gray-600 hover:text-brand-600 rounded disabled:opacity-40"
+                      title="Download certificate (PDF)"
                     >
-                      <Download size={15} />
+                      <FileText size={14} /> PDF
                     </button>
-                    {doc.status === 'stored' && doc.digilocker_status !== 'success' && doc.digilocker_status !== 'pending' && (
+                    <button
+                      data-testid={`doc-badge-png-${r.assertion_id}`}
+                      onClick={() => getBadgePng(r)}
+                      disabled={busyId === r.assertion_id}
+                      className="flex items-center gap-1 text-xs px-2 py-1 text-gray-600 hover:text-brand-600 rounded disabled:opacity-40"
+                      title="Download badge (PNG)"
+                    >
+                      <Award size={14} /> Badge
+                    </button>
+                    <button
+                      data-testid={`doc-badge-json-${r.assertion_id}`}
+                      onClick={() => getBadgeJson(r)}
+                      disabled={busyId === r.assertion_id}
+                      className="flex items-center gap-1 text-xs px-2 py-1 text-gray-600 hover:text-brand-600 rounded disabled:opacity-40"
+                      title="Download badge (Open Badges JSON)"
+                    >
+                      <Braces size={14} /> JSON
+                    </button>
+                    <button
+                      data-testid={`doc-photo-${r.assertion_id}`}
+                      onClick={() => pickPhoto(r)}
+                      disabled={busyId === r.assertion_id}
+                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40 ${
+                        r.has_photo
+                          ? 'text-green-700 hover:text-green-800'
+                          : 'text-gray-600 hover:text-brand-600'
+                      }`}
+                      title={
+                        r.has_photo
+                          ? 'Student photo attached — click to replace'
+                          : 'Upload student photo (PNG/JPEG) for the certificate'
+                      }
+                    >
+                      {r.has_photo ? <Check size={14} /> : <ImagePlus size={14} />} Photo
+                    </button>
+                    {r.status === 'active' && (
                       <button
-                        onClick={() => handlePushToDigiLocker(doc)}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition"
-                        title="Push to DigiLocker"
-                      >
-                        <Send size={12} />
-                        DigiLocker
-                      </button>
-                    )}
-                    {doc.status === 'stored' && doc.digilocker_status === 'failed' && (
-                      <button
-                        onClick={() => handlePushToDigiLocker(doc)}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition"
-                        title="Retry DigiLocker Push"
-                      >
-                        <Send size={12} />
-                        Retry
-                      </button>
-                    )}
-                    {doc.status === 'stored' && (
-                      <button
-                        onClick={() => handleRevoke(doc)}
+                        data-testid={`doc-revoke-${r.assertion_id}`}
+                        onClick={() => revoke(r)}
                         className="p-1.5 text-gray-400 hover:text-red-600 rounded"
                         title="Revoke"
                       >
-                        <Ban size={15} />
+                        <Ban size={14} />
                       </button>
                     )}
                   </div>
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-400">
-                  No documents match "{searchQuery}".
+                <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-400">
+                  {error
+                    ? 'Could not load issued credentials.'
+                    : rows.length === 0
+                      ? 'No credentials issued yet. Issue badges from the Badges page.'
+                      : `No credentials match "${searchQuery}".`}
+                </td>
+              </tr>
+            )}
+            {loading && (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-400">
+                  Loading…
                 </td>
               </tr>
             )}

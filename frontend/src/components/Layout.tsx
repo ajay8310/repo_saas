@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, Building2, FileText, Database,
-  Webhook, ScrollText, LogOut, FolderOpen, User, ShieldCheck, Bell, Award, BarChart3, Palette
+  Webhook, ScrollText, LogOut, User, ShieldCheck, Bell, Award, BarChart3, Palette
 } from 'lucide-react'
 
 export default function Layout() {
@@ -23,8 +23,7 @@ export default function Layout() {
     { to: '/badges', label: 'Badges', icon: Award, show: isIssuing },
     { to: '/badge-analytics', label: 'Badge Analytics', icon: BarChart3, show: isIssuing },
     { to: '/template-designer', label: 'Certificate Designer', icon: Palette, show: isIssuing },
-    { to: '/my-documents', label: 'My Documents', icon: FolderOpen, show: hasRole('beneficiary') },
-    { to: '/wallet', label: 'My Wallet', icon: Award, show: hasRole('beneficiary') },
+    { to: '/wallet', label: 'My Credentials', icon: Award, show: hasRole('beneficiary') },
     { to: '/notifications', label: 'Notifications', icon: Bell, show: hasRole('beneficiary') },
     { to: '/audit-logs', label: 'Audit Logs', icon: ScrollText, show: isAdmin },
     { to: '/webhooks', label: 'Webhooks', icon: Webhook, show: isAdmin },

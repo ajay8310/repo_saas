@@ -271,6 +271,29 @@ class IssuanceService:
         )
         return list(result.scalars().all())
 
+    async def list_assertions(
+        self,
+        tenant_id: UUID,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[BadgeAssertion]:
+        """List all assertions for the tenant, newest first (U6).
+
+        Tenant-scoped via RLS. Optionally filtered by status. Powers the
+        issuer-facing Documents list; callers resolve badge-class names with a
+        single keyed lookup (no join), mirroring ``WalletService.list_wallet``.
+        """
+        await set_tenant_context(self.db, str(tenant_id))
+        stmt = select(BadgeAssertion)
+        if status:
+            stmt = stmt.where(BadgeAssertion.status == status)
+        stmt = (
+            stmt.order_by(BadgeAssertion.issued_at.desc()).limit(limit).offset(offset)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

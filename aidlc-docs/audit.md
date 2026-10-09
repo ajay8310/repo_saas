@@ -663,3 +663,297 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 ### U5 FEATURE COMPLETE.
 
 ---
+
+## U5 Fix — Designer nav not visible (stale Vite bundle on Windows+Docker)
+**Timestamp**: 2026-08-24T04:30:00Z
+**User Input**: "It is not visible at front end." (screenshot: issuer sidebar lacked the "Certificate Designer" item)
+**AI Response**: Diagnosed and fixed a stale frontend bundle.
+**Context**: U5 post-completion fix.
+
+### Root cause
+- Source was correct (grep confirmed the Layout.tsx nav item + App.tsx route both present).
+- Vite logs showed NO HMR update events across 4 hours despite the Part D edits — the dev-server file watcher never saw the host edits. Classic Windows→Docker bind-mount issue: native FS change events don't cross into the Linux container, so Vite served the bundle from startup (before Part D).
+
+### Fix
+- `frontend/vite.config.ts`: added `server.watch = { usePolling: true, interval: 300 }` so change detection works inside the container (and future edits hot-reload reliably).
+- Restarted `repo_as_saas-frontend-1`; on restart Vite reads all source fresh.
+
+### Verification
+- Vite re-ready after restart. Served modules checked: App.tsx contains TemplateDesignerPage (True), Layout.tsx contains "Certificate Designer" (True), the designer page module serves 200.
+- User should hard-refresh (Ctrl+Shift+R); the "Certificate Designer" item now appears in the issuer sidebar.
+- Temp files cleaned.
+
+---
+
+## New Feature Request — U6 Live Documents + Dual Credential Downloads
+**Timestamp**: 2026-08-24T05:00:00Z
+**User Input**: "I want B and I also want that the certificates which are issued should be available in batch format as well... for any certificate issued, there will be two downloadable credentials - one is certificate pdf itself with qr and digital signature and second badge for the same certificate." Then clarified: "1.C 2.I mean badge not batch 3.A 4.OK 5.yes"
+**AI Response**: Scoped U6. Clarified "batch"→"badge" (no ZIP). Gathered full certificate/badge/assertion pipeline via context-gatherer. Will produce requirements → design → plan, each gated on approval.
+**Context**: INCEPTION/Requirements for additive feature U6.
+
+### Confirmed scope (Q1–Q5)
+- Q1=C: badge downloads as BOTH Open Badges JSON (.json assertion) AND a baked PNG (OB2.0 assertion embedded in PNG iTXt 'openbadges' chunk).
+- Q2: NO batch/ZIP — just the two separate downloadable credentials per issued certificate (cert PDF + badge).
+- Q3=A: Documents page lists real badge ASSERTIONS, each row offers Certificate PDF + Badge PNG + Badge JSON.
+- Q4: downloads in BOTH issuer views (Documents/Badges) and beneficiary Wallet.
+- Q5: same access as certificate download (badge:certificate for issuer/admin; badge:wallet_certificate for beneficiary own).
+
+### Key integration findings (context-gatherer)
+- OB assertion dict: `OpenBadgesSerializer.assertion(AssertionData)`; DB→AssertionData mapping in `PublicBadgeService.get_hosted_assertion` (but that method is gated on public==True → for authenticated non-public downloads, build AssertionData from tenant-scoped rows directly).
+- GAP: no tenant-wide "list assertions" — must add `IssuanceService.list_assertions` + `GET /badges/assertions` (badge:read).
+- Badge image is on the CLASS (image_s3_key), shared across assertions; fetch bytes via `_fetch_s3`.
+- Pillow 10.3.0 supports `PngInfo.add_itxt('openbadges', json)` → baking feasible. SVG badge images cannot be baked (reject with clear error; detect by key ext / img.format).
+- No JWS variant of assertion JSON (verification is HostedBadge); recipient salt not persisted (non-deterministic hash — acceptable for OB).
+- Mirror cert endpoints: badges.py (badge:certificate) + wallet.py (badge:wallet_certificate, require_owner). Frontend: add helpers in lib/badges.ts + lib/wallet.ts; rewire DocumentsPage from INITIAL_DOCS to live fetch; add buttons to WalletPage.
+
+---
+
+## U6 Part A — Backend badge build + baking — Built & Verified
+**Timestamp**: 2026-08-24T05:40:00Z
+**User Input**: "proceed to build Part A"
+**AI Response**: Built and verified Part A of U6.
+**Context**: CONSTRUCTION / Code Generation U6, Part A.
+
+### Delivered
+- `app/services/badge_baker.py` — `bake_png(png_bytes, assertion_doc)` embeds the OB2.0 assertion in a PNG `openbadges` iTXt chunk; `read_baked(png_bytes)` reads it back; `BadgeImageNotBakeableError`; `OB_KEYWORD`. Pure/testable.
+- `app/services/certificate_service.py` — `RenderedBadge` dataclass; `build_badge_json` + `build_badge_png` (ownership-checked like build_certificate; audit `badge:badge_download` + `viewed`/channel=badge; PNG raises BadgeImageNotBakeableError on missing/SVG image); `_assertion_doc` (builds OB2.0 Assertion from tenant-scoped rows via OpenBadgesSerializer, NOT gated on public); `_resolve_for_badge`; `_record_badge_download`. Added imports: json, badge_baker, openbadges.
+- `app/services/issuance_service.py` — `list_assertions(tenant_id, status?, limit, offset)` tenant-wide, newest first.
+
+### Verification (api container)
+- Imports OK. Bake→read round-trip returns the exact dict; baked bytes are a valid PNG. SVG/garbage/empty → BadgeImageNotBakeableError. `_assertion_doc` has all OB required fields, recipient.hashed=true, verification HostedBadge, badge name; revoked assertion → revoked:true. `import app.main` + all routers clean.
+- Temp files cleaned.
+
+### Correction logged
+- The badge_baker + openbadges import lines in certificate_service.py were dropped once by the editor/hook reformat; `import json` survived. Re-added both and grep-confirmed present.
+
+### Next: Part B (endpoints: GET /badges/assertions, /badges/assertions/{id}/badge.json|png, /wallet/{id}/badge.json|png).
+
+---
+
+## U6 Part B — Endpoints — Built & Verified
+**Timestamp**: 2026-08-24T06:20:00Z
+**User Input**: "Yes" (proceed to Part B)
+**AI Response**: Built and verified Part B of U6.
+**Context**: CONSTRUCTION / Code Generation U6, Part B.
+
+### Delivered
+- `app/routers/badges.py`: `AssertionListItem` model; `GET /badges/assertions` (`badge:read`, newest-first, per-class name lookup); `GET /badges/assertions/{id}/badge.json` + `/badge.png` (`badge:certificate`), 404 on not-found, 422 (NOT_BAKEABLE) on no/SVG image. Added `from app.services.badge_baker import BadgeImageNotBakeableError`.
+- `app/routers/wallet.py`: `GET /wallet/{id}/badge.json` + `/badge.png` (`badge:wallet_certificate`, `require_owner=user.sub`). Same import added.
+- `app/seed_demo.py`: `_ensure_badge_image` re-attaches the demo badge image when its S3 object is missing (idempotent via head_object); called on the already-present path too.
+
+### Verification (live via :3000 proxy)
+- All 5 routes register; `import app.main` clean.
+- `GET /badges/assertions` → 200 (10 rows with badge names).
+- Issuer `badge.json` → 200 application/ld+json, valid OB2.0 (@context=w3id openbadges/v2, type=Assertion, badge name, verification=HostedBadge).
+- Issuer `badge.png` → 200 image/png, 2640 B; downloaded PNG round-trips via read_baked → embedded type=Assertion + badge name.
+- Beneficiary wallet badge.json 200 + badge.png 200; cross-owner (another earner's assertion) → 404.
+- Classes with no image / missing-in-S3 image → 422 (correct behavior).
+
+### Bug found + fixed during verification (environment, not U6 code)
+- All badge.png initially 422. Diagnosis: the seeded badge-class `image_s3_key` pointed at an S3 object that no longer existed (LocalStack reset; `list_objects` under badges/ = 0; GetObject NoSuchKey). The DB row (postgres volume) survived but S3 didn't. U6's 422 was correct. Fixed by making the seed re-upload the image if absent; re-ran seed → "(re)attached badge image"; badge.png then 200 and round-trips.
+
+### Recurring import revert
+- `badge_baker` import in BOTH badges.py and wallet.py was dropped once by the editor reformat; re-added and grep-confirmed in both.
+
+### Next: Part C (backend tests), then D (frontend).
+
+---
+
+## U6 Part C — Backend Tests — Written & Passing
+**Timestamp**: 2026-08-24T06:50:00Z
+**User Input**: "yes" (proceed to Part C)
+**AI Response**: Wrote and ran U6 backend tests.
+**Context**: CONSTRUCTION / Code Generation U6, Part C.
+
+### Delivered
+- `tests/unit/test_badge_baker.py` (11) — bake returns valid PNG, OB_KEYWORD, embeds under openbadges, baked image reopens/same size; round-trip read == doc, read None (no chunk / non-image); reject empty, SVG, garbage, and non-PNG raster (JPEG).
+- `tests/unit/test_badge_download_service.py` (11) — build_badge_json ok (media type/filename/OB fields/commit), missing→404, owner-mismatch→404, revoked→revoked:true; build_badge_png ok + read_baked round-trip, no-image→NotBakeable, SVG key→NotBakeable, fetch-returns-None→NotBakeable, owner-mismatch→404; list_assertions returns rows / empty. Fake session (queued execute, sync add, async commit/refresh), S3/_fetch_s3 mocked.
+- `tests/property/test_badge_download_properties.py` (3) — Hypothesis: bake→read round-trip for arbitrary JSON-ish dict + any valid source PNG; _assertion_doc always has @context/type/id/recipient.hashed/badge/issuedOn/verification=HostedBadge; revoked assertion always revoked:true.
+
+### Results
+- New U6 suite: **25 passed** (11 + 11 + 3).
+- Broader regression `-k 'badge or certificate or wallet or template or assertion'`: **121 passed, 0 failed**, 4 benign pre-existing warnings. No regressions.
+- RBAC reuse (badge:certificate / badge:wallet_certificate) covered by existing permission-map property tests + the Part B live cross-owner 404.
+
+### Next: Part D (frontend — Documents live wiring + Wallet badge buttons).
+
+---
+
+## U6 Part D — Frontend — Built & Typechecked
+**Timestamp**: 2026-08-24T07:20:00Z
+**User Input**: "yes" (proceed to Part D)
+**AI Response**: Wired the Documents page to live assertions and added badge downloads to the Wallet.
+**Context**: CONSTRUCTION / Code Generation U6, Part D.
+
+### Delivered
+- `frontend/src/lib/badges.ts`: `AssertionListItem`, `listAssertions`, `downloadBadgePng`, `downloadBadgeJson`; renamed `savePdfBlob`→`saveBlob` (alias kept for back-compat).
+- `frontend/src/lib/wallet.ts`: `downloadWalletBadgePng`, `downloadWalletBadgeJson`.
+- `frontend/src/pages/tenant/DocumentsPage.tsx`: full rewrite to "Issued Credentials" — live `listAssertions`, columns Credential/Badge/Beneficiary/Status/Issued/Downloads, per-row Certificate (PDF) + Badge (PNG) + Badge (JSON) + Revoke, loading/empty/error states, search, "Issue from Badges" link. Removed the hardcoded INITIAL_DOCS, the client-side JSON stub, the simulated DigiLocker column/push, and the upload/bulk modals (issuance stays on the Badges page). PNG 422 surfaces a clear "add a PNG badge image" message.
+- `frontend/src/pages/beneficiary/WalletPage.tsx`: Badge (PNG) + JSON buttons beside Certificate; dynamic-import handlers + saveBlob; 422 handling.
+
+### Verification
+- `tsc --noEmit` clean.
+- All 4 modified modules serve 200 via Vite. Live proxy: `GET /badges/assertions` → 10 rows; downloads for a row → certificate PDF 7845 B, badge PNG 2640 B, badge JSON 1253 B.
+
+### Next: Part E — end-to-end browser verify + state/docs update + cleanup.
+
+---
+
+## U6 Part E — End-to-end Verified; Feature COMPLETE
+**Timestamp**: 2026-08-24T07:50:00Z
+**User Input**: "yes" (proceed to Part E)
+**AI Response**: Ran the full dual-credential-download flow end-to-end and finalized docs.
+**Context**: CONSTRUCTION / Code Generation U6, Part E (final).
+
+### End-to-end result (via :3000 Vite proxy → API)
+- Issuer `GET /badges/assertions` → 10 rows (live Documents data).
+- Issuer downloads for an imaged class: certificate PDF 200 (7845 B), badge PNG 200 (2640 B), badge JSON 200 (1253 B).
+- JSON valid OB2.0: @context=w3id openbadges/v2, type=Assertion, badge name, verification=HostedBadge, recipient.hashed=true.
+- Downloaded baked PNG round-trips: read_baked → type=Assertion, badge="Advanced Python — Demo".
+- No-image class: badge.png → 422 (NOT_BAKEABLE), badge.json → 200 (graceful degradation, FR-U6-3).
+- Beneficiary wallet: certificate 200, badge.png 200 (2640 B), badge.json 200 (1253 B).
+- Cross-owner (another earner's assertion) → 404.
+
+### Finalization
+- `aidlc-docs/aidlc-state.md`: U6 marked COMPLETE (all parts A–E).
+- Plan `u6-dual-credentials-plan.md`: all checkboxes checked.
+- Temp files cleaned (host + container). Registered the baked PNG as a session artifact.
+
+### Honest caveats (unchanged from design)
+- SVG badge images cannot be baked → badge.png returns 422 ("add a PNG badge image"); badge.json still works.
+- The OB assertion JSON is HostedBadge-verified (points at the hosted verify URL), not a JWS-signed assertion; the RS256 signature lives in the certificate PDF.
+- The badge image is per badge CLASS (shared across its assertions); only the embedded assertion data differs per badge.
+- Recipient hashed identity uses a fresh salt per download (non-deterministic) — acceptable for OB.
+- Found + fixed in Part B: seed re-attaches a missing S3 badge image after a LocalStack reset (DB row survives, object did not).
+
+### U6 FEATURE COMPLETE.
+
+---
+
+## Certificate & Badge Visual Polish (post-U6)
+**Timestamp**: 2026-08-24T08:40:00Z
+**User Input**: "right now the documents page downloads very basic pdf which does not look like real certificate. Can you make changes to make it look like real certificates and badges?"
+**AI Response**: Upgraded the built-in certificate templates and the demo badge art; found+fixed two underlying data issues. Treated as iterative visual polish of existing U4/U5 renderer (no new unit/approval gate).
+**Context**: Post-U6 enhancement.
+
+### Changes
+- `app/services/certificate_renderer.py`:
+  - Added decorative primitives: `_draw_ornate_frame` (concentric navy+gold frame + corner flourishes), `_draw_seal` (gold medallion: rings + 12-point star + label), `_draw_ribbon`, `_draw_signature_line`, `_rgb`.
+  - Rewrote `_render_classic` (now serif Times, ornate frame, gold seal+ribbon, recipient underline, signature line) and `_render_elegant` (ornate gold frame + seal). Added an accent header bar + seal to `_render_modern`.
+  - **Fixed `_image_reader`**: flatten RGBA/palette PNGs onto white → RGB before handing to ReportLab. drawImage(mask="auto") was silently dropping transparent/RGBA PNGs, so embedded badge/photo images weren't appearing.
+- `app/seed_demo.py`:
+  - Replaced the flat-circle `_solid_png` badge art with `_badge_png()` — a real medallion (ribbon tails, gold ring, star burst, center disc).
+  - `_ensure_badge_image` now always re-attaches the medallion (heals missing S3 object AND upgrades old placeholder art).
+  - Added `_ensure_recipient_photo` to re-attach the demo photo after a LocalStack reset.
+
+### Root cause of "basic PDF" (two issues)
+1. The seeded "Advanced Python — Demo" class had `custom_template_id` pointing at a bare U5 test template (logo+text+QR only) → rendered via render_custom_certificate, not the rich classic. Cleared it (assign null) so it uses the enhanced classic.
+2. Even on classic, the badge/photo images weren't embedding because `_image_reader`/drawImage dropped RGBA PNGs — fixed by flattening to RGB.
+
+### Verification
+- Enhanced classic for the seeded assertion: PDF `IMAGES 3` (medallion badge + recipient photo + QR), 21659 bytes (was ~7.7k flat). Baked badge PNG now 9053 bytes (real medallion, was 2640 flat circle).
+- Tests: `test_certificate_renderer.py` + certificate/template property tests → 18 passed, 0 failed.
+- Temp files cleaned. Artifacts registered (cert PDF + badge PNG).
+
+### Note for the user
+- Classes still pointed at a bare custom designer template will render that template (not the enhanced classic). To get the rich look, use a built-in template or design a richer custom one. The seeded demo class was reverted to built-in classic.
+
+---
+
+## World-class Badge Art (post-U6 polish)
+**Timestamp**: 2026-08-24T09:20:00Z
+**User Input**: "the downloaded badge looks very basic, please build a world class badge."
+**AI Response**: Rebuilt `_badge_png` in `app/seed_demo.py` as a premium medallion; iterated twice against rendered previews to fix defects.
+**Context**: Post-U6 visual polish (seed demo art).
+
+### Final design (pure Pillow, 4x supersample → LANCZOS)
+- Soft drop shadow; beveled gold rim (radial gradient + top sheen + inner groove); 72-ray gold sunburst field clipped to a disc; navy enamel centre with radial gradient + twin gold keylines; faceted 5-point gold star; "EXCELLENCE" ribbon banner with folded ends, tails, and legible text; two laurel branches arcing beneath the star.
+- Helpers added: `_radial`, `_disc_mask`, `_disc_full_mask`, `_ring_mask`, `_draw_faceted_star`, `_draw_laurel_branch`, `_draw_ribbon_banner`. `_badge_png(size, label)` now takes a label.
+
+### Iteration (fixing defects seen in rendered previews)
+- v1: ribbon overlapped the medallion (text hidden) + laurel rendered as jagged squares.
+- v2: moved medallion up (centre at 0.44H) and ribbon fully below; text now legible.
+- v3 (final): replaced the broken laurel sprig with clean `_draw_laurel_branch` (stem arc + almond leaves) beneath a raised star.
+
+### Verification (live via :3000)
+- Re-seeded (re-attaches the medallion). `badge.png` download → 200, 163,579 B (was 2,640 flat). Certificate PDF → 200, 181,038 B (embeds the detailed medallion + photo + QR).
+- Baked PNG still a valid Open Badges artifact: `read_baked` → type=Assertion, badge "Advanced Python — Demo".
+- Temp files cleaned; final artifact registered.
+
+### Note
+- Only the demo seed art changed; real issuers still upload their own badge image. The `_badge_png` generator could later be exposed as a "generate a starter badge" option if desired.
+
+---
+
+## My Documents (beneficiary) wired to real downloads
+**Timestamp**: 2026-08-24T09:50:00Z
+**User Input**: "why this page is downloading json only?" (screenshot: /my-documents) → chose "B".
+**AI Response**: Rewrote `frontend/src/pages/beneficiary/MyDocumentsPage.tsx` from hardcoded demo rows + client-side JSON stub to the beneficiary's REAL badge assertions via `listWallet`, with the three real downloads.
+**Context**: Post-U6 frontend fix.
+
+### Change
+- Removed `INITIAL_DOCS` demo rows, `downloadAsJson` stub, and the mocked selective-disclosure verification-token panel (that was UI for the unbuilt generic document-repository/schema feature).
+- Now: `listWallet(false)` → real WalletItems; per credential: Certificate (PDF, `downloadWalletCertificate`), Badge (PNG, `downloadWalletBadgePng`), Badge (JSON, `downloadWalletBadgeJson`), and Share (copy public verification link). Loading/empty/error states. Reuses U6 wallet endpoints + `saveBlob`.
+
+### Verification (live via :3000)
+- `tsc --noEmit` clean. MyDocumentsPage module serves 200.
+- Beneficiary wallet → 5 real assertions. Downloads for a real assertion: certificate PDF 200 (182,946 B, enhanced classic + medallion), badge PNG 200 (163,579 B, world-class medallion), badge JSON 200 (1,253 B, OB2.0). No more JSON stub.
+- Temp files cleaned.
+
+### Note
+- My Documents and My Wallet now both show the beneficiary's real credentials. My Wallet additionally offers public/private, hide, remove; My Documents is a simpler download-focused view. The generic document-repository/selective-disclosure feature remains unbuilt (its token panel was mocked and is now removed from this page).
+
+---
+## Consolidate beneficiary pages (My Documents + My Wallet) into one
+**Timestamp**: 2026-08-24T10:30:00Z
+**User Input**: "consolidate them into one page"
+**AI Response**: Merged the two beneficiary pages into a single credentials page. Kept Wallet (the fuller page: downloads + public/private + hide + remove + share), deleted MyDocumentsPage, redirected the old path, and relabeled the nav item and page heading to "My Credentials".
+**Context**: Post-U6 consolidation of beneficiary UX.
+### Changes
+- `frontend/src/components/Layout.tsx`: removed the "My Documents" nav item; single beneficiary item is now `{ to: '/wallet', label: 'My Credentials', icon: Award }`; removed the now-unused `FolderOpen` import.
+- `frontend/src/App.tsx`: removed `import MyDocumentsPage`; replaced its route with `<Route path="my-documents" element={<Navigate to="/wallet" replace />} />` so the old URL still resolves.
+- `frontend/src/pages/beneficiary/WalletPage.tsx`: heading relabeled to "My Credentials" with an updated subtitle (certificate PDF + badge PNG/JSON, share, manage).
+- `frontend/src/pages/DashboardPage.tsx`: beneficiary "Documents" stat card and "View my credentials" quick action now link directly to `/wallet` (icon switched to `Award`); removed unused `FolderOpen` import.
+- Deleted `frontend/src/pages/beneficiary/MyDocumentsPage.tsx`.
+### Verification
+- `tsc --noEmit` clean (no diagnostics) after all edits, including the import-line swaps (re-grepped to confirm the edits stuck).
+- No remaining `/my-documents` or `MyDocumentsPage` references in `frontend/src`. Frontend container up; Vite polling picks up the changes with no rebuild. SPA routing is client-side, so both `/wallet` and the legacy `/my-documents` resolve to the app shell; `/my-documents` redirects to `/wallet`.
+- Temp files cleaned.
+### Result
+- Beneficiaries now have a single "My Credentials" page (the former Wallet). The old `/my-documents` URL redirects to `/wallet`.
+---
+## Issuer student-photo upload for certificates
+**Timestamp**: 2026-08-24T11:10:00Z
+**User Input**: "How issuer will upload student photos which has to placed on certificate? Please add that functionality."
+**AI Response**: The full backend path (upload endpoint, service, S3 storage with malware scan + SSE-KMS, the `recipient_photo_s3_key` column, and certificate rendering) already existed from U4, plus an unused `uploadRecipientPhoto` frontend helper. The functionality was unreachable for an issuer because of a missing permission and no UI. Extended the existing mechanism rather than building a parallel one.
+**Context**: U4 recipient-photo feature completion.
+### Gaps found (via context-gatherer) and fixed
+- The photo endpoint `POST /badges/assertions/{id}/photo` was guarded by `badge:update`, which the `issuer` role did not hold -> an issuer got 403. The `uploadRecipientPhoto` lib helper existed but was wired to no page.
+### Changes
+- `app/rbac/permissions.py`: added `badge:update` to the `issuer` role (comment explains it is for attaching a recipient/student photo). Admins already had it.
+- `app/routers/badges.py`: added `has_photo: bool = False` to `AssertionListItem`; the `GET /badges/assertions` list now sets `has_photo=bool(a.recipient_photo_s3_key)` so the UI can show whether a photo is attached.
+- `frontend/src/lib/badges.ts`: added `has_photo: boolean` to the `AssertionListItem` type (the `uploadRecipientPhoto` helper already existed).
+- `frontend/src/pages/tenant/DocumentsPage.tsx`: added a per-row "Photo" action. A single hidden file input is retargeted per credential; selecting a PNG/JPEG validates type + 5 MB limit (mirrors `certificate_photo_max_bytes`), base64-encodes via `FileReader`, calls `uploadRecipientPhoto`, and refreshes. Button shows a green check + "attached" tooltip when `has_photo`, else an upload icon. 503 (scanner down) surfaces a retry message. Subtitle updated to mention uploading a student photo.
+### Verification
+- Frontend `tsc --noEmit` clean. Backend unit tests: `test_badge_download_service.py` + `test_certificate_renderer.py` = 21 passed.
+- Live E2E as the ISSUER role (dev-token): `GET /badges/assertions` -> 15 rows, target `has_photo=false`; `POST .../photo` with a generated PNG -> 200 (previously 403 for issuer), stored at `badges/{tenant}/{class}/photos/{assertion}-{uuid}.png`; re-list -> `has_photo=true`; `GET .../certificate` -> 200 valid PDF embedding 5 images (student photo now on the certificate).
+- Temp files cleaned (host + both containers).
+### Flow (how an issuer uses it)
+- Issue the badge from the Badges page -> it appears on Issued Credentials (Documents). Click "Photo" on that row, pick the student's PNG/JPEG. It is malware-scanned, stored encrypted (SSE-KMS), and attached to that assertion. The next certificate PDF download (issuer or the beneficiary from their wallet) shows the photo. Re-clicking "Photo" replaces it.
+---
+## Issue-time student photo (single issue)
+**Timestamp**: 2026-08-24T11:45:00Z
+**User Input**: "yes" (approving the offered follow-up: supply the student photo at issue-time, including the bulk flow)
+**AI Response**: Added an optional student photo to the single-issue flow so a photo can be supplied in the same request that issues the badge, reusing the existing validated/scanned/encrypted photo path. Bulk per-recipient photos were intentionally deferred (needs a photo-per-row mapping, e.g. a ZIP keyed by email, plus async handling in the Celery task); the existing Documents-page per-row Photo button already covers attaching to bulk-issued credentials after the fact.
+**Context**: Follow-up to the issuer student-photo feature.
+### Changes
+- `app/routers/badges.py`: `IssueRequest` gained optional `photo_base64` + `photo_content_type` (pattern `^image/(png|jpe?g)$`); `IssueResponse` gained `has_photo: bool`. `issue_badge` now also depends on `CertificateService`; it validates the pair is all-or-nothing (422 if only one is supplied), issues the badge, and when a photo is present base64-decodes it and calls the existing `CertificateService.upload_recipient_photo` with the new assertion id. If the photo is rejected/scanner-down after the badge is already issued, it returns 422 `PHOTO_REJECTED` / 503 `SERVICE_UNAVAILABLE` with the `assertion_id` so the issuer can retry from the Documents page. No parallel storage path.
+- `frontend/src/lib/badges.ts`: added `IssuePhoto` interface and an optional `photo` arg to `issueBadge` (sends `photo_base64`/`photo_content_type`); added `has_photo?: boolean` to `Assertion`.
+- `frontend/src/pages/tenant/BadgeClassesPage.tsx`: the single-issue `IssueModal` gained an optional "Add student photo" picker (PNG/JPEG, 5 MB client validation mirroring backend, FileReader -> base64, remove-photo control). `handleIssue` passes the photo through and surfaces the post-issue photo errors (badge issued, add photo from Documents). Added module-level `fileToBase64` + `ISSUE_PHOTO_MAX_BYTES`; imported `useRef`, `ImagePlus`, `IssuePhoto`.
+### Verification
+- Backend imports clean; frontend `tsc --noEmit` clean; badge/certificate unit tests 21 passed.
+- Live E2E as ISSUER: `POST /badges/issue` with `photo_base64`+`photo_content_type` -> 201 with `has_photo=true`; list shows `has_photo=true`; certificate PDF -> 200 valid, 5 embedded images (photo on the first download, no second step). Mismatched pair -> 422.
+- Temp files cleaned (host + both containers).
+### Deferred (not built)
+- Per-recipient photos in BULK issue. Would need a recipient->photo mapping (ZIP keyed by email, or a photo URL column in the CSV) and photo handling inside `app/tasks/badge_bulk.py`. Current bulk flow is unchanged; bulk-issued credentials get photos via the Documents-page per-row Photo button.
+---

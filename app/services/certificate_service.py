@@ -16,6 +16,7 @@ audit entries inside the transaction.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid as uuid_mod
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from app.models.badge import BadgeAssertion, BadgeClass
 from app.models.certificate_template import CertificateTemplate
 from app.models.tenant import Tenant
 from app.services.audit_service import AuditService
+from app.services.badge_baker import BadgeImageNotBakeableError, bake_png
 from app.services.badge_event_service import BadgeEventService
 from app.services.certificate_renderer import (
     CertificateContext,
@@ -46,6 +48,12 @@ from app.services.malware_scanner import (
     ScanUnavailableError,
     get_malware_scanner,
 )
+from app.services.openbadges import (
+    AssertionData,
+    BadgeClassData,
+    IssuerProfile,
+    OpenBadgesSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +64,15 @@ _ALLOWED_PHOTO_TYPES: frozenset[str] = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class RenderedCertificate:
+    content: bytes
+    media_type: str
+    filename: str
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedBadge:
+    """A downloadable Open Badges artifact (baked PNG or assertion JSON)."""
+
     content: bytes
     media_type: str
     filename: str
@@ -264,6 +281,160 @@ class CertificateService:
             media_type="application/pdf",
             filename=f"certificate-{assertion_id}.pdf",
         )
+
+    # ------------------------------------------------------------------
+    # Badge downloads — OB2.0 JSON + baked PNG (U6)
+    # ------------------------------------------------------------------
+
+    async def build_badge_json(
+        self,
+        tenant_id: UUID,
+        assertion_id: UUID,
+        actor_id: str = "system",
+        actor_role: str = "issuer",
+        require_owner: str | None = None,
+    ) -> RenderedBadge:
+        """Build the Open Badges 2.0 Assertion JSON for an assertion (U6).
+
+        Authenticated + tenant-scoped (does NOT require the assertion to be
+        public, unlike the hosted public endpoint). ``require_owner`` restricts
+        to the owning beneficiary. Always succeeds for a resolvable assertion.
+        """
+        assertion, badge_class, tenant = await self._resolve_for_badge(
+            tenant_id, assertion_id, require_owner
+        )
+        doc = self._assertion_doc(assertion, badge_class, tenant)
+        await self._record_badge_download(tenant_id, assertion, actor_id, actor_role, "json")
+        payload = json.dumps(doc, indent=2, ensure_ascii=False).encode("utf-8")
+        return RenderedBadge(
+            content=payload,
+            media_type="application/ld+json",
+            filename=f"badge-{assertion_id}.json",
+        )
+
+    async def build_badge_png(
+        self,
+        tenant_id: UUID,
+        assertion_id: UUID,
+        actor_id: str = "system",
+        actor_role: str = "issuer",
+        require_owner: str | None = None,
+    ) -> RenderedBadge:
+        """Build a baked Open Badges PNG for an assertion (U6).
+
+        Fetches the badge class's PNG image and embeds the assertion JSON in its
+        ``openbadges`` iTXt chunk. Raises :class:`BadgeImageNotBakeableError`
+        when the class has no image or the image is not a PNG (e.g. SVG), which
+        the router maps to 422 — the JSON download still works in that case.
+        """
+        assertion, badge_class, tenant = await self._resolve_for_badge(
+            tenant_id, assertion_id, require_owner
+        )
+        key = badge_class.image_s3_key if badge_class else None
+        if not key:
+            raise BadgeImageNotBakeableError("this badge has no image to bake")
+        if key.lower().endswith(".svg"):
+            raise BadgeImageNotBakeableError(
+                "badge image is SVG; a PNG image is required to produce a baked badge"
+            )
+        png_bytes = self._fetch_s3(key)
+        if not png_bytes:
+            raise BadgeImageNotBakeableError("badge image could not be retrieved")
+
+        doc = self._assertion_doc(assertion, badge_class, tenant)
+        baked = bake_png(png_bytes, doc)  # may raise BadgeImageNotBakeableError
+        await self._record_badge_download(tenant_id, assertion, actor_id, actor_role, "png")
+        return RenderedBadge(
+            content=baked,
+            media_type="image/png",
+            filename=f"badge-{assertion_id}.png",
+        )
+
+    async def _resolve_for_badge(
+        self, tenant_id: UUID, assertion_id: UUID, require_owner: str | None
+    ) -> tuple[BadgeAssertion, BadgeClass | None, Tenant | None]:
+        """Resolve assertion (+ownership) + class + tenant for a badge download."""
+        await set_tenant_context(self.db, str(tenant_id))
+        assertion = await self._get_assertion(assertion_id)
+        if assertion is None:
+            raise CertificateNotFoundError(assertion_id)
+        if require_owner is not None and assertion.beneficiary_id != require_owner:
+            raise CertificateNotFoundError(assertion_id)
+        badge_class = await self._get_class(assertion.badge_class_id)
+        tenant = await self._get_tenant(tenant_id)
+        return assertion, badge_class, tenant
+
+    def _assertion_doc(
+        self,
+        assertion: BadgeAssertion,
+        badge_class: BadgeClass | None,
+        tenant: Tenant | None,
+    ) -> dict:
+        """Build the OB2.0 Assertion dict from resolved rows (reuses the serializer)."""
+        from app.services.issuance_service import new_recipient_salt
+
+        base = f"{self.settings.public_base_url}/api/v1/public/badges"
+        issuer = IssuerProfile(
+            id_url=f"{base}/issuers/{tenant.id if tenant else assertion.tenant_id}",
+            name=(
+                (tenant.issuer_name or tenant.name)
+                if tenant and (tenant.issuer_name or tenant.name)
+                else "Issuer"
+            ),
+            url=tenant.issuer_url if tenant else None,
+            email=tenant.issuer_email if tenant else None,
+        )
+        bc = BadgeClassData(
+            id_url=f"{base}/classes/{assertion.badge_class_id}",
+            name=badge_class.name if badge_class else "Badge",
+            description=badge_class.description if badge_class else None,
+            image_url=None,
+            criteria_narrative=badge_class.criteria_narrative if badge_class else None,
+            criteria_url=badge_class.criteria_url if badge_class else None,
+            issuer=issuer,
+            tags=list(badge_class.tags or []) if badge_class else [],
+            alignment=list(badge_class.alignment or []) if badge_class else [],
+        )
+        data = AssertionData(
+            id_url=f"{base}/assertions/{assertion.id}",
+            recipient_identity=assertion.beneficiary_id,
+            recipient_salt=new_recipient_salt(),
+            issued_on=assertion.issued_at,
+            verify_url=f"{base}/assertions/{assertion.id}",
+            badge_class=bc,
+            expires=assertion.expires_at,
+            revoked=assertion.status == "revoked",
+            revocation_reason=assertion.revocation_reason,
+        )
+        return OpenBadgesSerializer().assertion(data)
+
+    async def _record_badge_download(
+        self,
+        tenant_id: UUID,
+        assertion: BadgeAssertion,
+        actor_id: str,
+        actor_role: str,
+        kind: str,
+    ) -> None:
+        """Audit + analytics for a badge download, then commit."""
+        self._events.record(
+            tenant_id=tenant_id,
+            event_type="viewed",
+            badge_class_id=assertion.badge_class_id,
+            assertion_id=assertion.id,
+            channel="badge",
+        )
+        await self._audit.record(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            operation="badge:badge_download",
+            resource_type="badge_assertion",
+            resource_id=str(assertion.id),
+            outcome="success",
+            metadata={"kind": kind},
+        )
+        await self.db.commit()
 
     # ------------------------------------------------------------------
     # Internal

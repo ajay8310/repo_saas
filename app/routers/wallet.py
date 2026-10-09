@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.dependencies.auth import TokenPayload, get_current_user
 from app.rbac.permissions import require_permission
+from app.services.badge_baker import BadgeImageNotBakeableError
 from app.services.certificate_service import (
     CertificateNotFoundError,
     CertificateService,
@@ -191,6 +192,69 @@ async def download_wallet_certificate(
         content=cert.content,
         media_type=cert.media_type,
         headers={"Content-Disposition": f'attachment; filename="{cert.filename}"'},
+    )
+
+
+@router.get(
+    "/{assertion_id}/badge.json",
+    response_class=Response,
+    dependencies=[Depends(require_permission("badge:wallet_certificate"))],
+)
+async def download_wallet_badge_json(
+    assertion_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    cert_service: CertificateService = Depends(get_certificate_service),
+) -> Response:
+    """Download the earner's own Open Badges 2.0 assertion JSON (U6, ownership-checked)."""
+    try:
+        badge = await cert_service.build_badge_json(
+            tenant_id=user.tenant_id,
+            assertion_id=assertion_id,
+            actor_id=user.sub,
+            actor_role="beneficiary",
+            require_owner=user.sub,
+        )
+    except CertificateNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
+    return Response(
+        content=badge.content,
+        media_type=badge.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{badge.filename}"'},
+    )
+
+
+@router.get(
+    "/{assertion_id}/badge.png",
+    response_class=Response,
+    dependencies=[Depends(require_permission("badge:wallet_certificate"))],
+)
+async def download_wallet_badge_png(
+    assertion_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    cert_service: CertificateService = Depends(get_certificate_service),
+) -> Response:
+    """Download the earner's own baked Open Badges PNG (U6, ownership-checked).
+
+    422 when the badge class has no PNG image to bake; the JSON still works.
+    """
+    try:
+        badge = await cert_service.build_badge_png(
+            tenant_id=user.tenant_id,
+            assertion_id=assertion_id,
+            actor_id=user.sub,
+            actor_role="beneficiary",
+            require_owner=user.sub,
+        )
+    except CertificateNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
+    except BadgeImageNotBakeableError as exc:
+        raise HTTPException(
+            status_code=422, detail={"code": "NOT_BAKEABLE", "message": str(exc)}
+        )
+    return Response(
+        content=badge.content,
+        media_type=badge.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{badge.filename}"'},
     )
 
 

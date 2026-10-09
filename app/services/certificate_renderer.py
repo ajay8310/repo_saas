@@ -85,16 +85,42 @@ def _qr_png(data: str, box_size: int = 5) -> bytes:
 
 
 def _image_reader(data: bytes | None):
-    """Return a reportlab ImageReader for *data*, or None if unusable."""
+    """Return a reportlab ImageReader for *data*, or None if unusable.
+
+    Normalizes the image to an RGBA PNG first. ReportLab's ImageReader can
+    silently fail to place some PNGs (notably palette/transparency variants
+    produced by Pillow), so we round-trip through Pillow to a canonical form
+    and keep an alpha channel so transparent badge art composites cleanly.
+    """
     if not data:
         return None
     from reportlab.lib.utils import ImageReader
 
     try:
-        return ImageReader(io.BytesIO(data))
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(data))
+        # Flatten any transparency onto white and emit RGB. ReportLab's
+        # drawImage(mask="auto") can silently drop RGBA/palette PNGs; a plain
+        # RGB raster always places correctly.
+        if img.mode in ("RGBA", "LA", "P"):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        else:
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return ImageReader(buf)
     except Exception:
         logger.debug("Could not read embedded image for certificate", exc_info=True)
-        return None
+        # Fall back to the raw bytes — better a direct attempt than nothing.
+        try:
+            return ImageReader(io.BytesIO(data))
+        except Exception:
+            return None
 
 
 def _new_canvas(ctx: CertificateContext):
@@ -173,6 +199,129 @@ def _short_sig(jws: str) -> str:
     return cleaned[:32].upper() if cleaned else "n/a"
 
 
+# ---------------------------------------------------------------------------
+# Decorative primitives — make certificates look formal/real (shared)
+# ---------------------------------------------------------------------------
+
+
+def _draw_ornate_frame(pdf, width, height, outer, inner, mid=None) -> None:
+    """A concentric double frame with inset corner ticks — a classic certificate
+    border. Colors are hex strings; *mid* adds a thin third rule when given."""
+    from reportlab.lib import colors
+
+    mm = _mm()
+    pdf.saveState()
+    pdf.setStrokeColor(colors.HexColor(outer))
+    pdf.setLineWidth(4)
+    pdf.rect(10 * mm, 10 * mm, width - 20 * mm, height - 20 * mm)
+    if mid:
+        pdf.setStrokeColor(colors.HexColor(mid))
+        pdf.setLineWidth(0.8)
+        pdf.rect(13 * mm, 13 * mm, width - 26 * mm, height - 26 * mm)
+    pdf.setStrokeColor(colors.HexColor(inner))
+    pdf.setLineWidth(1.4)
+    pdf.rect(16 * mm, 16 * mm, width - 32 * mm, height - 32 * mm)
+    # Corner flourishes: short double rules meeting at each inner corner.
+    pdf.setLineWidth(1.0)
+    c = 16 * mm
+    arm = 14 * mm
+    for cx, cy, dx, dy in (
+        (c, c, 1, 1), (width - c, c, -1, 1),
+        (c, height - c, 1, -1), (width - c, height - c, -1, -1),
+    ):
+        pdf.line(cx + dx * 4 * mm, cy, cx + dx * (4 * mm + arm), cy)
+        pdf.line(cx, cy + dy * 4 * mm, cx, cy + dy * (4 * mm + arm))
+    pdf.restoreState()
+
+
+def _draw_seal(pdf, cx, cy, r, ring_color, accent_color, label="VERIFIED") -> None:
+    """A gold medallion: concentric rings, a star burst, and a small label.
+
+    Draws at centre ``(cx, cy)`` with outer radius ``r``. Points-based units."""
+    from reportlab.lib import colors
+
+    ring = colors.HexColor(ring_color)
+    accent = colors.HexColor(accent_color)
+    pdf.saveState()
+    # Outer disc (filled, pale) + rings.
+    pdf.setFillColor(colors.Color(*_rgb(accent_color), alpha=0.12))
+    pdf.circle(cx, cy, r, stroke=0, fill=1)
+    pdf.setStrokeColor(ring)
+    pdf.setLineWidth(2.2)
+    pdf.circle(cx, cy, r, stroke=1, fill=0)
+    pdf.setLineWidth(0.8)
+    pdf.circle(cx, cy, r * 0.80, stroke=1, fill=0)
+    # Star burst (12-point) between the rings.
+    import math
+
+    pdf.setFillColor(ring)
+    path = pdf.beginPath()
+    pts = 12
+    r_out, r_in = r * 0.72, r * 0.42
+    for i in range(pts * 2):
+        ang = math.pi * i / pts
+        rad = r_out if i % 2 == 0 else r_in
+        x = cx + rad * math.cos(ang)
+        y = cy + rad * math.sin(ang)
+        if i == 0:
+            path.moveTo(x, y)
+        else:
+            path.lineTo(x, y)
+    path.close()
+    pdf.drawPath(path, stroke=0, fill=1)
+    # Inner disc + label.
+    pdf.setFillColor(colors.white)
+    pdf.circle(cx, cy, r * 0.30, stroke=0, fill=1)
+    pdf.setFillColor(accent)
+    pdf.setFont("Helvetica-Bold", max(5.0, r * 0.16))
+    pdf.drawCentredString(cx, cy - r * 0.06, label)
+    pdf.restoreState()
+
+
+def _draw_ribbon(pdf, cx, top_y, w, h, color) -> None:
+    """Two ribbon tails hanging from ``(cx, top_y)`` — pairs with a seal above."""
+    from reportlab.lib import colors
+
+    col = colors.HexColor(color)
+    dark = colors.Color(*_rgb(color), alpha=0.75)
+    pdf.saveState()
+    for sign in (-1, 1):
+        x0 = cx + sign * w * 0.55
+        p = pdf.beginPath()
+        p.moveTo(x0 - w / 2, top_y)
+        p.lineTo(x0 + w / 2, top_y)
+        p.lineTo(x0 + w / 2, top_y - h)
+        p.lineTo(x0, top_y - h + h * 0.28)  # notch
+        p.lineTo(x0 - w / 2, top_y - h)
+        p.close()
+        pdf.setFillColor(col if sign < 0 else dark)
+        pdf.drawPath(p, stroke=0, fill=1)
+    pdf.restoreState()
+
+
+def _draw_signature_line(pdf, cx, y, w, name, title="Authorised Signatory") -> None:
+    """A signature rule with the issuer name below — the human-authority touch."""
+    from reportlab.lib import colors
+
+    mm = _mm()
+    pdf.saveState()
+    pdf.setStrokeColor(colors.HexColor("#334155"))
+    pdf.setLineWidth(0.8)
+    pdf.line(cx - w / 2, y, cx + w / 2, y)
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFillColor(colors.HexColor("#1f2937"))
+    pdf.drawCentredString(cx, y - 5 * mm, name)
+    pdf.setFont("Helvetica", 7.5)
+    pdf.setFillColor(colors.HexColor("#94a3b8"))
+    pdf.drawCentredString(cx, y - 9 * mm, title)
+    pdf.restoreState()
+
+
+def _rgb(hex_color: str) -> tuple[float, float, float]:
+    h = hex_color.lstrip("#")
+    return (int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255)
+
+
 def _draw_verification_panel(pdf, ctx: CertificateContext, x, y, w) -> None:
     """A clearly visible verification panel: QR + digital-signature details.
 
@@ -244,8 +393,12 @@ def _finish(pdf, buf, ctx, width, height) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Template: classic — centered, formal, serif-ish
+# Template: classic — formal, decorative frame + gold seal/ribbon (serif)
 # ---------------------------------------------------------------------------
+
+_NAVY = "#1e3a8a"
+_GOLD = "#b8860b"
+_INK = "#1f2937"
 
 
 def _render_classic(ctx: CertificateContext) -> bytes:
@@ -256,47 +409,66 @@ def _render_classic(ctx: CertificateContext) -> bytes:
     pdf, buf = _new_canvas(ctx)
     width, height = A4
 
-    # Double border.
-    pdf.setStrokeColor(colors.HexColor("#1e3a8a"))
-    pdf.setLineWidth(3)
-    pdf.rect(12 * mm, 12 * mm, width - 24 * mm, height - 24 * mm)
-    pdf.setLineWidth(1)
-    pdf.rect(16 * mm, 16 * mm, width - 32 * mm, height - 32 * mm)
+    # Decorative navy+gold concentric frame with corner flourishes.
+    _draw_ornate_frame(pdf, width, height, outer=_NAVY, inner=_NAVY, mid=_GOLD)
 
-    pdf.setFillColor(colors.HexColor("#1e3a8a"))
-    pdf.setFont("Helvetica-Bold", 13)
-    pdf.drawCentredString(width / 2, height - 32 * mm, ctx.issuer_name.upper())
+    # Issuer name (gold, letter-spaced-feel via a thin rule under it).
+    pdf.setFillColor(colors.HexColor(_GOLD))
+    pdf.setFont("Times-Bold", 15)
+    pdf.drawCentredString(width / 2, height - 34 * mm, ctx.issuer_name.upper())
+    pdf.setStrokeColor(colors.HexColor(_GOLD))
+    pdf.setLineWidth(0.6)
+    pdf.line(width / 2 - 34 * mm, height - 37 * mm, width / 2 + 34 * mm, height - 37 * mm)
 
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.setFont("Helvetica-Bold", 26)
-    pdf.drawCentredString(width / 2, height - 55 * mm, "Certificate of Achievement")
+    # Title — serif, formal.
+    pdf.setFillColor(colors.HexColor(_NAVY))
+    pdf.setFont("Times-Bold", 34)
+    pdf.drawCentredString(width / 2, height - 56 * mm, "Certificate of Achievement")
 
-    pdf.setFont("Helvetica", 12)
-    pdf.setFillColor(colors.HexColor("#374151"))
+    pdf.setFont("Times-Italic", 13)
+    pdf.setFillColor(colors.HexColor("#4b5563"))
     pdf.drawCentredString(width / 2, height - 70 * mm, "This is proudly presented to")
 
-    pdf.setFont("Helvetica-Bold", 22)
-    pdf.setFillColor(colors.HexColor("#1e3a8a"))
-    pdf.drawCentredString(width / 2, height - 85 * mm, ctx.recipient_display)
+    # Recipient — large serif with an underline rule.
+    pdf.setFont("Times-BoldItalic", 30)
+    pdf.setFillColor(colors.HexColor(_INK))
+    pdf.drawCentredString(width / 2, height - 88 * mm, ctx.recipient_display)
+    pdf.setStrokeColor(colors.HexColor("#d1d5db"))
+    pdf.setLineWidth(0.6)
+    pdf.line(width / 2 - 70 * mm, height - 92 * mm, width / 2 + 70 * mm, height - 92 * mm)
 
-    pdf.setFont("Helvetica", 12)
-    pdf.setFillColor(colors.HexColor("#374151"))
-    pdf.drawCentredString(width / 2, height - 98 * mm, "for earning the badge")
-    pdf.setFont("Helvetica-Bold", 16)
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.drawCentredString(width / 2, height - 108 * mm, ctx.badge_name)
+    pdf.setFont("Times-Roman", 13)
+    pdf.setFillColor(colors.HexColor("#4b5563"))
+    pdf.drawCentredString(width / 2, height - 104 * mm, "in recognition of earning the badge")
+    pdf.setFont("Times-Bold", 18)
+    pdf.setFillColor(colors.HexColor(_NAVY))
+    pdf.drawCentredString(width / 2, height - 115 * mm, ctx.badge_name)
 
-    # Photo (left) and badge image (right) flanking.
-    _draw_photo(pdf, ctx, 28 * mm, height - 150 * mm, 32 * mm)
+    if ctx.criteria:
+        pdf.setFont("Times-Italic", 10)
+        pdf.setFillColor(colors.HexColor("#6b7280"))
+        pdf.drawCentredString(width / 2, height - 124 * mm, _truncate(ctx.criteria, 95))
+
+    # Recipient photo (left) and the badge medallion image (right).
+    _draw_photo(pdf, ctx, 30 * mm, 78 * mm, 30 * mm)
     badge_img = _image_reader(ctx.badge_image)
     if badge_img:
-        pdf.drawImage(badge_img, width - 60 * mm, height - 150 * mm, width=32 * mm,
-                      height=32 * mm, preserveAspectRatio=True, mask="auto")
+        pdf.drawImage(badge_img, width - 60 * mm, 78 * mm, width=30 * mm,
+                      height=30 * mm, preserveAspectRatio=True, mask="auto")
 
-    pdf.setFont("Helvetica", 9)
+    # Gold seal + ribbon, centred low on the page.
+    seal_cx, seal_cy, seal_r = width / 2, 96 * mm, 15 * mm
+    _draw_ribbon(pdf, seal_cx, seal_cy - seal_r * 0.4, 9 * mm, 16 * mm, _NAVY)
+    _draw_seal(pdf, seal_cx, seal_cy, seal_r, ring_color=_GOLD, accent_color=_NAVY)
+
+    # Issued/expiry line.
+    pdf.setFont("Times-Roman", 10)
     pdf.setFillColor(colors.HexColor("#6b7280"))
     pdf.drawCentredString(width / 2, 70 * mm, f"Issued: {ctx.issued_at}"
-                          + (f"   |   Expires: {ctx.expires_at}" if ctx.expires_at else ""))
+                          + (f"      Expires: {ctx.expires_at}" if ctx.expires_at else ""))
+
+    # Signature line (left of the verification panel area).
+    _draw_signature_line(pdf, 56 * mm, 58 * mm, 50 * mm, ctx.issuer_name)
 
     _draw_verification_panel(pdf, ctx, 24 * mm, 20 * mm, width - 48 * mm)
     return _finish(pdf, buf, ctx, width, height)
@@ -315,10 +487,16 @@ def _render_modern(ctx: CertificateContext) -> bytes:
     pdf, buf = _new_canvas(ctx)
     width, height = A4
 
-    pdf.setFillColor(colors.HexColor("#0ea5e9"))
+    sky = "#0ea5e9"
+    pdf.setFillColor(colors.HexColor(sky))
     pdf.rect(0, 0, 20 * mm, height, stroke=0, fill=1)
+    # Thin accent bar across the top for a finished, framed feel.
+    pdf.rect(20 * mm, height - 8 * mm, width - 20 * mm, 8 * mm, stroke=0, fill=1)
 
-    pdf.setFillColor(colors.HexColor("#0ea5e9"))
+    # Seal in the top-right so it reads as an award, not a memo.
+    _draw_seal(pdf, width - 40 * mm, height - 36 * mm, 13 * mm, ring_color=sky, accent_color="#0f172a")
+
+    pdf.setFillColor(colors.HexColor(sky))
     pdf.setFont("Helvetica-Bold", 11)
     pdf.drawString(32 * mm, height - 28 * mm, ctx.issuer_name.upper())
 
@@ -372,39 +550,48 @@ def _render_elegant(ctx: CertificateContext) -> bytes:
     pdf, buf = _new_canvas(ctx)
     width, height = A4
 
-    gold = colors.HexColor("#b8860b")
-    pdf.setStrokeColor(gold)
-    pdf.setLineWidth(1.5)
-    pdf.rect(14 * mm, 14 * mm, width - 28 * mm, height - 28 * mm)
+    gold = "#b8860b"
+    deep = "#7c5e10"
 
-    pdf.setFillColor(gold)
-    pdf.setFont("Helvetica-Bold", 12)
+    # Thin gold double frame with corner flourishes.
+    _draw_ornate_frame(pdf, width, height, outer=gold, inner=deep, mid=gold)
+
+    pdf.setFillColor(colors.HexColor(deep))
+    pdf.setFont("Times-Bold", 13)
     pdf.drawCentredString(width / 2, height - 34 * mm, ctx.issuer_name)
+    pdf.setStrokeColor(colors.HexColor(gold))
     pdf.setLineWidth(0.5)
-    pdf.line(width / 2 - 30 * mm, height - 37 * mm, width / 2 + 30 * mm, height - 37 * mm)
+    pdf.line(width / 2 - 32 * mm, height - 37 * mm, width / 2 + 32 * mm, height - 37 * mm)
 
     pdf.setFillColor(colors.HexColor("#1f2937"))
-    pdf.setFont("Helvetica-Bold", 24)
-    pdf.drawCentredString(width / 2, height - 58 * mm, "Certificate of Excellence")
+    pdf.setFont("Times-Bold", 32)
+    pdf.drawCentredString(width / 2, height - 56 * mm, "Certificate of Excellence")
 
-    _draw_photo(pdf, ctx, width / 2 - 16 * mm, height - 100 * mm, 32 * mm)
+    # Seal at the top-centre area for the elegant look.
+    _draw_seal(pdf, width / 2, height - 86 * mm, 15 * mm, ring_color=gold, accent_color=deep)
 
-    pdf.setFont("Helvetica", 11)
+    pdf.setFont("Times-Italic", 12)
     pdf.setFillColor(colors.HexColor("#6b7280"))
     pdf.drawCentredString(width / 2, height - 112 * mm, "awarded to")
-    pdf.setFont("Helvetica-Bold", 20)
-    pdf.setFillColor(gold)
-    pdf.drawCentredString(width / 2, height - 124 * mm, ctx.recipient_display)
+    pdf.setFont("Times-BoldItalic", 28)
+    pdf.setFillColor(colors.HexColor(deep))
+    pdf.drawCentredString(width / 2, height - 127 * mm, ctx.recipient_display)
+    pdf.setStrokeColor(colors.HexColor("#e5e7eb"))
+    pdf.setLineWidth(0.5)
+    pdf.line(width / 2 - 60 * mm, height - 131 * mm, width / 2 + 60 * mm, height - 131 * mm)
 
-    pdf.setFont("Helvetica", 11)
+    pdf.setFont("Times-Roman", 12)
     pdf.setFillColor(colors.HexColor("#6b7280"))
-    pdf.drawCentredString(width / 2, height - 136 * mm, f"for the achievement of {ctx.badge_name}")
+    pdf.drawCentredString(width / 2, height - 142 * mm, f"for the achievement of {ctx.badge_name}")
 
-    pdf.setFont("Helvetica", 9)
+    _draw_photo(pdf, ctx, 30 * mm, 76 * mm, 28 * mm)
+
+    pdf.setFont("Times-Roman", 10)
     pdf.setFillColor(colors.HexColor("#9ca3af"))
     pdf.drawCentredString(width / 2, 68 * mm, f"Issued {ctx.issued_at}"
-                          + (f"  ·  Expires {ctx.expires_at}" if ctx.expires_at else ""))
+                          + (f"   ·   Expires {ctx.expires_at}" if ctx.expires_at else ""))
 
+    _draw_signature_line(pdf, width - 56 * mm, 58 * mm, 50 * mm, ctx.issuer_name)
     _draw_verification_panel(pdf, ctx, 24 * mm, 20 * mm, width - 48 * mm)
     return _finish(pdf, buf, ctx, width, height)
 

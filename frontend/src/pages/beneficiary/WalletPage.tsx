@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Award, Globe, Lock, EyeOff, Eye, Trash2, Share2, Download, Ban } from 'lucide-react'
+import { Award, Globe, Lock, EyeOff, Eye, Trash2, Share2, Download, Ban, Braces } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
-import { savePdfBlob } from '@/lib/badges'
+import { saveBlob } from '@/lib/badges'
 import type { WalletItem } from '@/lib/wallet'
 import { listWallet } from '@/lib/wallet'
 
@@ -133,10 +133,38 @@ export default function WalletPage() {
     try {
       const { downloadWalletCertificate } = await import('@/lib/wallet')
       const blob = await downloadWalletCertificate(item.assertion_id)
-      savePdfBlob(blob, `certificate-${item.assertion_id}.pdf`)
+      saveBlob(blob, `certificate-${item.assertion_id}.pdf`)
       notify('Certificate downloaded.')
     } catch {
       notify('Certificate download is available once the badge is issued live.', 'error')
+    }
+  }
+
+  const downloadBadgePng = async (item: WalletItem) => {
+    try {
+      const { downloadWalletBadgePng } = await import('@/lib/wallet')
+      const blob = await downloadWalletBadgePng(item.assertion_id)
+      saveBlob(blob, `badge-${item.assertion_id}.png`)
+      notify('Badge (PNG) downloaded.')
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status
+      notify(
+        status === 422
+          ? 'This badge has no PNG image to bake.'
+          : 'Badge download is available once the badge is issued live.',
+        'error',
+      )
+    }
+  }
+
+  const downloadBadgeJson = async (item: WalletItem) => {
+    try {
+      const { downloadWalletBadgeJson } = await import('@/lib/wallet')
+      const blob = await downloadWalletBadgeJson(item.assertion_id)
+      saveBlob(blob, `badge-${item.assertion_id}.json`)
+      notify('Badge (JSON) downloaded.')
+    } catch {
+      notify('Badge download is available once the badge is issued live.', 'error')
     }
   }
 
@@ -146,8 +174,8 @@ export default function WalletPage() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Wallet</h1>
-          <p className="text-gray-500 mt-1">Your earned badges — share, manage, and download certificates</p>
+          <h1 className="text-2xl font-bold text-gray-900">My Credentials</h1>
+          <p className="text-gray-500 mt-1">Your earned badges — download the certificate (PDF) and badge (PNG + JSON), share, and manage</p>
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-600">
           <input
@@ -211,6 +239,22 @@ export default function WalletPage() {
                 title="Download certificate (PDF)"
               >
                 <Download size={15} /> Certificate
+              </button>
+              <button
+                data-testid={`wallet-badge-png-${item.assertion_id}`}
+                onClick={() => downloadBadgePng(item)}
+                className="flex items-center gap-1.5 text-sm px-2.5 py-1.5 text-gray-600 hover:text-brand-600 rounded"
+                title="Download badge (PNG)"
+              >
+                <Award size={15} /> Badge
+              </button>
+              <button
+                data-testid={`wallet-badge-json-${item.assertion_id}`}
+                onClick={() => downloadBadgeJson(item)}
+                className="flex items-center gap-1.5 text-sm px-2.5 py-1.5 text-gray-600 hover:text-brand-600 rounded"
+                title="Download badge (Open Badges JSON)"
+              >
+                <Braces size={15} /> JSON
               </button>
               <button
                 data-testid={`wallet-public-${item.assertion_id}`}

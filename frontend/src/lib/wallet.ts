@@ -44,3 +44,15 @@ export async function downloadWalletCertificate(assertionId: string): Promise<Bl
   const { data } = await api.get(`/wallet/${assertionId}/certificate`, { responseType: 'blob' })
   return data as Blob
 }
+
+/** Download the earner's own baked Open Badges PNG (ownership enforced). */
+export async function downloadWalletBadgePng(assertionId: string): Promise<Blob> {
+  const { data } = await api.get(`/wallet/${assertionId}/badge.png`, { responseType: 'blob' })
+  return data as Blob
+}
+
+/** Download the earner's own Open Badges 2.0 assertion JSON (ownership enforced). */
+export async function downloadWalletBadgeJson(assertionId: string): Promise<Blob> {
+  const { data } = await api.get(`/wallet/${assertionId}/badge.json`, { responseType: 'blob' })
+  return data as Blob
+}
