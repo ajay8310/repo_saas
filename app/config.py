@@ -137,6 +137,15 @@ class Settings(BaseSettings):
             "Leave empty to use the real AWS endpoint."
         ),
     )
+    s3_public_endpoint_url: str = Field(
+        default="",
+        description=(
+            "Browser-reachable S3 endpoint used ONLY when generating presigned "
+            "URLs the browser will hit directly (e.g. http://localhost:4566 for "
+            "LocalStack, where the internal s3_endpoint_url host 'localstack' is "
+            "not resolvable from the host). Leave empty to use s3_endpoint_url."
+        ),
+    )
 
     # KMS
     kms_endpoint_url: str = Field(
@@ -530,6 +539,25 @@ class Settings(BaseSettings):
         default=5 * 1024 * 1024,  # 5 MB
         ge=1024,
         description="Maximum recipient-photo upload size for certificates, in bytes.",
+    )
+    # Bring-your-own certificate PDF (tenant-supplied, pre-built design).
+    certificate_pdf_max_bytes: int = Field(
+        default=25 * 1024 * 1024,  # 25 MB
+        ge=1024,
+        description="Maximum size of a tenant-supplied certificate PDF upload, in bytes.",
+    )
+    certificate_pdf_pades_enabled: bool = Field(
+        default=True,
+        description=(
+            "Embed a true PAdES digital signature into tenant-supplied certificate "
+            "PDFs (pyHanko) using the tenant's X.509 issuer cert. If signing fails, "
+            "the unsigned PDF is stored and the JWS-over-hash still applies."
+        ),
+    )
+    certificate_pdf_presign_ttl_seconds: int = Field(
+        default=900,  # 15 minutes to complete the direct-to-S3 upload
+        ge=60,
+        description="Lifetime of the presigned PUT URL for a certificate-PDF upload (seconds).",
     )
     # ------------------------------------------------------------------
     # Bulk issue with photos (ZIP)

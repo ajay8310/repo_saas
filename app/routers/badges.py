@@ -119,6 +119,35 @@ class IssueResponse(BaseModel):
     has_photo: bool = False
 
 
+class CertificatePdfPresignRequest(BaseModel):
+    badge_class_id: str = Field(..., min_length=1)
+    size_bytes: int = Field(..., ge=1)
+
+
+class CertificatePdfPresignResponse(BaseModel):
+    upload_url: str
+    pdf_key: str
+    max_bytes: int
+
+
+class IssuePdfRequest(BaseModel):
+    badge_class_id: str = Field(..., min_length=1)
+    beneficiary_id: str = Field(..., min_length=1, max_length=512)
+    # S3 key of the certificate PDF already uploaded via the presigned PUT URL.
+    pdf_key: str = Field(..., min_length=1)
+
+
+class IssuePdfResponse(BaseModel):
+    assertion_id: str
+    badge_class_id: str
+    beneficiary_id: str
+    issued_at: str
+    expires_at: str | None
+    status: str
+    certificate_pdf_s3_key: str
+    certificate_pdf_sha256: str | None = None
+
+
 class BulkIssueRequest(BaseModel):
     badge_class_id: str = Field(..., min_length=1)
     beneficiary_ids: list[str] = Field(..., min_length=1, max_length=10000)
@@ -465,6 +494,102 @@ async def issue_badge(
             )
 
     return IssueResponse(**asdict(result), has_photo=has_photo)
+
+
+@router.post(
+    "/pdf-upload/presign",
+    response_model=CertificatePdfPresignResponse,
+    dependencies=[Depends(require_permission("badge:issue"))],
+)
+async def certificate_pdf_presign(
+    body: CertificatePdfPresignRequest,
+    user: TokenPayload = Depends(get_current_user),
+    issuance: IssuanceService = Depends(get_issuance_service),
+    cert_service: CertificateService = Depends(get_certificate_service),
+) -> CertificatePdfPresignResponse:
+    """Issue a presigned PUT URL for a direct-to-S3 certificate-PDF upload.
+
+    Bring-your-own flow: the browser PUTs the raw ``.pdf`` to the returned URL,
+    then calls ``/badges/issue-pdf`` with the returned ``pdf_key``. The size cap
+    is enforced here and again when the object is read. The badge class is
+    validated so a bad class fails before any upload.
+    """
+    try:
+        await issuance.ensure_class_issuable(user.tenant_id, UUID(body.badge_class_id))
+    except IssuanceValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+    try:
+        url, key = cert_service.presign_certificate_pdf(user.tenant_id, body.size_bytes)
+    except CertificateValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+    except CertificateServiceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"code": "SERVICE_UNAVAILABLE", "message": str(exc)})
+    return CertificatePdfPresignResponse(
+        upload_url=url, pdf_key=key, max_bytes=cert_service.settings.certificate_pdf_max_bytes
+    )
+
+
+@router.post(
+    "/issue-pdf",
+    response_model=IssuePdfResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("badge:issue"))],
+)
+async def issue_with_pdf(
+    body: IssuePdfRequest,
+    user: TokenPayload = Depends(get_current_user),
+    service: IssuanceService = Depends(get_issuance_service),
+    cert_service: CertificateService = Depends(get_certificate_service),
+) -> IssuePdfResponse:
+    """Issue a credential backed by a tenant-supplied certificate PDF.
+
+    The issuer first uploads the pre-built PDF via ``/badges/pdf-upload/presign``
+    and passes the resulting ``pdf_key`` here. The server issues the assertion
+    (name/validity from the chosen badge class — no template rendering), then
+    reads the uploaded PDF, malware-scans it, digitally signs it with the
+    tenant's issuer key (RS256 JWS over the PDF's SHA-256), and stores it. The
+    certificate download then returns this exact PDF.
+    """
+    actor_role = user.roles[0] if user.roles else "issuer"
+    try:
+        result = await service.issue(
+            tenant_id=user.tenant_id,
+            badge_class_id=UUID(body.badge_class_id),
+            beneficiary_id=body.beneficiary_id,
+            actor_id=user.sub,
+            actor_role=actor_role,
+        )
+    except IssuanceValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(exc)})
+
+    try:
+        s3_key, pdf_sha256 = await cert_service.attach_certificate_pdf_from_key(
+            tenant_id=user.tenant_id,
+            assertion_id=UUID(result.assertion_id),
+            pdf_key=body.pdf_key,
+            actor_id=user.sub,
+            actor_role=actor_role,
+        )
+    except CertificateNotFoundError:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND"})
+    except CertificateValidationError as exc:
+        # The assertion exists but has no PDF; surface the problem with its id so
+        # the issuer can re-upload against it via the Documents page.
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "PDF_REJECTED", "message": str(exc), "assertion_id": result.assertion_id},
+        )
+    except CertificateServiceUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_UNAVAILABLE", "message": str(exc), "assertion_id": result.assertion_id},
+        )
+
+    return IssuePdfResponse(
+        **asdict(result),
+        certificate_pdf_s3_key=s3_key,
+        certificate_pdf_sha256=pdf_sha256,
+    )
 
 
 @router.post(

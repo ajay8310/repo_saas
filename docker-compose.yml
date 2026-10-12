@@ -55,6 +55,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://reposaaas:reposaaas@postgres:5432/reposaaas
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://localstack:4566
+      # Browser-reachable endpoint for presigned upload URLs (host machine
+      # cannot resolve the internal 'localstack' hostname).
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:4566
       KMS_ENDPOINT_URL: http://localstack:4566
       SES_ENDPOINT_URL: http://localstack:4566
       SNS_ENDPOINT_URL: http://localstack:4566

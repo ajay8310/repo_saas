@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.services.directory_service import DirectoryService, get_directory_service
 from app.services.public_badge_service import (
@@ -139,6 +139,24 @@ async def get_issuer_public_key(
     if doc is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return doc
+
+
+@router.get("/issuers/{tenant_id}/cert")
+async def get_issuer_cert(
+    tenant_id: UUID,
+    request: Request,
+    service: PublicBadgeService = Depends(get_public_badge_service),
+    _: None = Depends(_throttle),
+) -> Response:
+    """Return the issuer's X.509 signing certificate (PEM).
+
+    Verifiers use this as the trust anchor for the embedded PAdES signature in a
+    tenant-supplied certificate PDF.
+    """
+    pem = await service.get_issuer_cert_pem(tenant_id)
+    if pem is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return Response(content=pem, media_type="application/x-pem-file")
 
 
 # ---------------------------------------------------------------------------

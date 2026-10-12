@@ -89,6 +89,44 @@ class IssuerSigningService:
         }
 
     # ------------------------------------------------------------------
+    # X.509 certificate (for embedded PAdES PDF signatures)
+    # ------------------------------------------------------------------
+
+    async def ensure_signing_cert(self, tenant_id: UUID) -> str:
+        """Return the issuer's X.509 signing cert PEM, generating it if absent.
+
+        The cert is self-signed from the tenant's existing RSA issuer private key
+        (so the embedded PAdES signature chains to the issuer's own identity).
+        Idempotent. Ensures the keypair exists first.
+        """
+        await self.ensure_keypair(tenant_id)
+        tenant = await self._get_tenant(tenant_id)
+        if tenant is None:
+            raise IssuerKeyError(f"tenant not found: {tenant_id}")
+        if tenant.issuer_signing_cert:
+            return tenant.issuer_signing_cert
+
+        private_pem = self._open_private(tenant.issuer_signing_private_key, tenant_id)
+        subject_cn = (tenant.issuer_name or tenant.name or f"tenant-{tenant_id}")[:64]
+        cert_pem = _self_signed_cert_pem(private_pem, subject_cn, tenant.issuer_key_id or "isk")
+
+        tenant.issuer_signing_cert = cert_pem
+        await self.db.commit()
+        logger.info("Generated issuer X.509 signing cert for tenant %s", tenant_id)
+        return cert_pem
+
+    async def signing_material(self, tenant_id: UUID) -> tuple[str, str]:
+        """Return ``(private_key_pem, cert_pem)`` for embedded PDF signing.
+
+        The private key is opened (unsealed) in memory for the signing call only;
+        callers must not persist it. Generates key + cert lazily if absent.
+        """
+        cert_pem = await self.ensure_signing_cert(tenant_id)
+        tenant = await self._get_tenant(tenant_id)
+        private_pem = self._open_private(tenant.issuer_signing_private_key, tenant_id)
+        return private_pem, cert_pem
+
+    # ------------------------------------------------------------------
     # Signing
     # ------------------------------------------------------------------
 
@@ -154,6 +192,54 @@ def _generate_rsa_pem() -> tuple[str, str]:
         .decode("utf-8")
     )
     return private_pem, public_pem
+
+
+def _self_signed_cert_pem(private_pem: str, subject_cn: str, key_id: str) -> str:
+    """Build a self-signed X.509 cert (PEM) from an existing RSA private key.
+
+    The subject/issuer CN is the issuer name; the cert is valid for 10 years and
+    marked for digital signatures. Used to embed a PAdES signature in a PDF.
+    """
+    from datetime import timedelta
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.x509.oid import NameOID
+
+    key = serialization.load_pem_private_key(private_pem.encode("utf-8"), password=None)
+    name = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, subject_cn),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, key_id),
+        ]
+    )
+    now = datetime.now(UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)  # self-signed
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=3650))
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=True,  # non-repudiation
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(private_key=key, algorithm=hashes.SHA256())
+    )
+    return cert.public_bytes(serialization.Encoding.PEM).decode("utf-8")
 
 
 class IssuerKeyError(Exception):

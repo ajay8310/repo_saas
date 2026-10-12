@@ -42,6 +42,10 @@ class Tenant(Base, UUIDPrimaryKeyMixin):
     issuer_key_generated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # X.509 signing certificate (PEM) derived from the issuer keypair, used for
+    # embedded PAdES signatures on PDFs. Self-signed by default (trust chain is
+    # the issuer's own cert); a tenant may later supply a CA-issued cert.
+    issuer_signing_cert: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -16,6 +16,7 @@ audit entries inside the transaction.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import uuid as uuid_mod
@@ -171,6 +172,241 @@ class CertificateService:
         return s3_key
 
     # ------------------------------------------------------------------
+    # Bring-your-own certificate PDF (tenant-supplied, pre-built design)
+    # ------------------------------------------------------------------
+
+    def presign_certificate_pdf(self, tenant_id: UUID, size_bytes: int) -> tuple[str, str]:
+        """Return a presigned PUT URL + upload key for a direct-to-S3 PDF upload.
+
+        Enforces the max PDF size before issuing the URL (re-checked server-side
+        when the object is read). The key lives under a per-upload prefix so a
+        failed/abandoned upload is easy to reap.
+        """
+        if size_bytes <= 0:
+            raise CertificateValidationError("file size must be greater than zero")
+        if size_bytes > self.settings.certificate_pdf_max_bytes:
+            raise CertificateValidationError(
+                f"PDF exceeds the maximum of {self.settings.certificate_pdf_max_bytes} bytes"
+            )
+        upload_id = uuid_mod.uuid4()
+        key = (
+            f"{self.settings.badge_image_prefix}/{tenant_id}/_pdf_uploads/"
+            f"{upload_id}/certificate.pdf"
+        )
+        try:
+            # Presign against the browser-reachable endpoint when configured, so
+            # the URL's signed Host matches what the browser actually PUTs to.
+            # (The internal 'localstack' host is not resolvable from the host
+            # machine; use 'localhost' there via s3_public_endpoint_url.)
+            presigner = self._presign_s3_client()
+            url = presigner.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": self.settings.s3_bucket_name,
+                    "Key": key,
+                    "ContentType": "application/pdf",
+                    "ServerSideEncryption": "aws:kms",
+                },
+                ExpiresIn=self.settings.certificate_pdf_presign_ttl_seconds,
+            )
+        except Exception as exc:
+            logger.error("Certificate PDF presign failed: %s", exc)
+            raise CertificateServiceUnavailableError("Storage service unavailable") from exc
+        return url, key
+
+    def _presign_s3_client(self):
+        """An S3 client whose endpoint is the browser-reachable public endpoint.
+
+        Falls back to the normal internal client when no public endpoint is set
+        (e.g. real AWS, where the regional endpoint is reachable everywhere).
+        """
+        public = self.settings.s3_public_endpoint_url
+        if not public:
+            return self._s3
+        kwargs: dict = {"region_name": self.settings.aws_region, "endpoint_url": public}
+        if self.settings.aws_access_key_id:
+            kwargs["aws_access_key_id"] = self.settings.aws_access_key_id
+            kwargs["aws_secret_access_key"] = self.settings.aws_secret_access_key
+        return boto3.client("s3", **kwargs)
+
+    async def attach_certificate_pdf_from_key(
+        self,
+        tenant_id: UUID,
+        assertion_id: UUID,
+        pdf_key: str,
+        actor_id: str = "system",
+        actor_role: str = "issuer",
+    ) -> tuple[str, str]:
+        """Read an uploaded PDF from its upload key, scan, sign, and attach it.
+
+        Reads the tenant-scoped upload object, malware-scans it (fail-closed),
+        digitally signs it with the tenant's issuer key (RS256 JWS over the PDF's
+        SHA-256), stores it at a permanent key (SSE-KMS), records the signature +
+        hash on the assertion, and deletes the temporary upload object. Returns
+        ``(permanent_s3_key, pdf_sha256)``.
+        """
+        prefix = f"{self.settings.badge_image_prefix}/{tenant_id}/_pdf_uploads/"
+        if not pdf_key.startswith(prefix) or ".." in pdf_key:
+            raise CertificateValidationError("invalid upload key for this tenant")
+
+        try:
+            head = self._s3.head_object(Bucket=self.settings.s3_bucket_name, Key=pdf_key)
+        except Exception as exc:
+            raise CertificateValidationError(
+                "uploaded PDF not found — re-upload and try again"
+            ) from exc
+        if head.get("ContentLength", 0) > self.settings.certificate_pdf_max_bytes:
+            self._delete_quiet(pdf_key)
+            raise CertificateValidationError("PDF exceeds the maximum allowed size")
+
+        content = self._fetch_s3(pdf_key)
+        if not content:
+            raise CertificateServiceUnavailableError("Storage service unavailable")
+        try:
+            return await self.attach_certificate_pdf(
+                tenant_id=tenant_id,
+                assertion_id=assertion_id,
+                content=content,
+                content_type="application/pdf",
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+        finally:
+            self._delete_quiet(pdf_key)
+
+    async def attach_certificate_pdf(
+        self,
+        tenant_id: UUID,
+        assertion_id: UUID,
+        content: bytes,
+        content_type: str = "application/pdf",
+        actor_id: str = "system",
+        actor_role: str = "issuer",
+    ) -> tuple[str, str]:
+        """Scan, digitally sign, store, and attach a tenant-supplied certificate PDF.
+
+        The PDF is left byte-for-byte unmodified; the signature is an RS256 JWS
+        over the PDF's SHA-256, produced with the tenant's issuer key and recorded
+        on the assertion (consistent with the platform's JWS signing posture).
+        Returns ``(permanent_s3_key, pdf_sha256)``.
+        """
+        if content_type != "application/pdf":
+            raise CertificateValidationError("certificate must be a PDF (application/pdf)")
+        if not content:
+            raise CertificateValidationError("PDF content must be non-empty")
+        if len(content) > self.settings.certificate_pdf_max_bytes:
+            raise CertificateValidationError("PDF exceeds the maximum allowed size")
+        # Structural sanity: per the PDF spec the %PDF- header may appear within
+        # the first 1024 bytes (some exporters prepend a UTF-8 BOM or
+        # whitespace), so don't require it at byte 0.
+        if b"%PDF-" not in content[:1024]:
+            raise CertificateValidationError("file does not look like a valid PDF")
+
+        await set_tenant_context(self.db, str(tenant_id))
+        assertion = await self._get_assertion(assertion_id)
+        if assertion is None:
+            raise CertificateNotFoundError(assertion_id)
+
+        try:
+            scan = self.scanner.scan(content)
+            if not scan.clean:
+                raise CertificateValidationError(f"PDF rejected: malware ({scan.reason})")
+        except ScanUnavailableError:
+            raise CertificateServiceUnavailableError("Malware scan service unavailable")
+
+        tenant = await self._get_tenant(tenant_id)
+        issuer_name = (
+            tenant.issuer_name if tenant and tenant.issuer_name
+            else (tenant.name if tenant else "")
+        )
+
+        # Embed a true PAdES digital signature into the PDF using the tenant's
+        # X.509 signing cert, so the stored/downloaded PDF carries a signature a
+        # PDF viewer can validate. On any signing failure we fall back to the
+        # unsigned bytes (the JWS-over-hash below still provides an API-level
+        # proof) rather than failing the whole issuance.
+        signed = content
+        pdf_signed = False
+        if self.settings.certificate_pdf_pades_enabled:
+            try:
+                import asyncio as _asyncio
+                import functools as _functools
+
+                from app.services.pdf_signer import PdfSignError, sign_pdf_pades
+
+                private_pem, cert_pem = await self._signing.signing_material(tenant_id)
+                # pyHanko's sync sign_pdf internally calls asyncio.run(), which
+                # cannot run inside this request's event loop — run it in a
+                # worker thread so it gets its own loop.
+                signed = await _asyncio.to_thread(
+                    _functools.partial(
+                        sign_pdf_pades,
+                        content,
+                        private_key_pem=private_pem,
+                        cert_pem=cert_pem,
+                        reason="Issued and signed by the credential issuer",
+                        location=issuer_name,
+                    )
+                )
+                pdf_signed = True
+            except PdfSignError as exc:
+                logger.warning(
+                    "PAdES signing failed for assertion %s; storing unsigned PDF: %s",
+                    assertion_id, exc,
+                )
+                signed = content
+
+        # Record a JWS over the (signed) PDF's SHA-256 — a verifiable, API-level
+        # attestation that complements the embedded signature.
+        pdf_sha256 = hashlib.sha256(signed).hexdigest()
+        signature_payload = {
+            "assertion_id": str(assertion_id),
+            "pdf_sha256": pdf_sha256,
+            "pdf_signed": pdf_signed,
+            "issuer": issuer_name,
+            "issued_at": assertion.issued_at.isoformat() if assertion.issued_at else "",
+        }
+        signature_jws = await self._signing.sign(tenant_id, signature_payload)
+
+        s3_key = (
+            f"{self.settings.badge_image_prefix}/{tenant_id}/"
+            f"{assertion.badge_class_id}/certificates/{assertion_id}-{uuid_mod.uuid4()}.pdf"
+        )
+        try:
+            self._s3.put_object(
+                Bucket=self.settings.s3_bucket_name,
+                Key=s3_key,
+                Body=signed,
+                ContentType="application/pdf",
+                ServerSideEncryption="aws:kms",
+            )
+        except Exception as exc:
+            logger.error("Certificate PDF S3 upload failed: %s", exc)
+            raise CertificateServiceUnavailableError("Storage service unavailable") from exc
+
+        assertion.certificate_pdf_s3_key = s3_key
+        assertion.certificate_pdf_sha256 = pdf_sha256
+        assertion.certificate_pdf_signature_jws = signature_jws
+        await self._audit.record(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            operation="badge:certificate_pdf_attach",
+            resource_type="badge_assertion",
+            resource_id=str(assertion_id),
+            outcome="success",
+            metadata={"pdf_sha256": pdf_sha256, "pdf_signed": pdf_signed},
+        )
+        await self.db.commit()
+        return s3_key, pdf_sha256
+
+    def _delete_quiet(self, key: str) -> None:
+        try:
+            self._s3.delete_object(Bucket=self.settings.s3_bucket_name, Key=key)
+        except Exception:
+            logger.debug("Could not delete uploaded PDF %s", key, exc_info=True)
+
+    # ------------------------------------------------------------------
     # Certificate build (Q3/Q4/Q5/Q7)
     # ------------------------------------------------------------------
 
@@ -194,6 +430,42 @@ class CertificateService:
             raise CertificateNotFoundError(assertion_id)
         if require_owner is not None and assertion.beneficiary_id != require_owner:
             raise CertificateNotFoundError(assertion_id)
+
+        # Bring-your-own PDF: a tenant-supplied, pre-built, already-signed
+        # certificate takes precedence over template rendering. Return the
+        # stored bytes verbatim; still record the view event + audit.
+        if assertion.certificate_pdf_s3_key:
+            stored = self._fetch_s3(assertion.certificate_pdf_s3_key)
+            if stored:
+                self._events.record(
+                    tenant_id=tenant_id,
+                    event_type="viewed",
+                    badge_class_id=assertion.badge_class_id,
+                    assertion_id=assertion_id,
+                    channel="certificate",
+                )
+                await self._audit.record(
+                    tenant_id=tenant_id,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    operation="badge:certificate_download",
+                    resource_type="badge_assertion",
+                    resource_id=str(assertion_id),
+                    outcome="success",
+                    metadata={"template": "byo_pdf"},
+                )
+                await self.db.commit()
+                return RenderedCertificate(
+                    content=stored,
+                    media_type="application/pdf",
+                    filename=f"certificate-{assertion_id}.pdf",
+                )
+            # If the stored object is unexpectedly missing, fall through to
+            # render a template so the download never hard-fails.
+            logger.warning(
+                "BYO certificate PDF missing for assertion %s; falling back to render",
+                assertion_id,
+            )
 
         badge_class = await self._get_class(assertion.badge_class_id)
         tenant = await self._get_tenant(tenant_id)

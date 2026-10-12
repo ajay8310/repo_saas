@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Search, Ban, FileText, Award, Braces, Award as BadgeIcon, ImagePlus, Check,
-  FileArchive, X,
+  FileArchive, X, FileSignature,
 } from 'lucide-react'
 import { Toast, useToast } from '@/hooks/useToast'
 import type { AssertionListItem, BadgeClass } from '@/lib/badges'
@@ -12,6 +12,7 @@ import {
   downloadBadgeJson,
   downloadBadgePng,
   downloadCertificate,
+  issueByoPdf,
   listAssertions,
   listBadgeClasses,
   revokeAssertion,
@@ -21,6 +22,8 @@ import {
 
 /** Max ZIP size — mirrors backend bulk_zip_max_bytes (100 MB). */
 const MAX_ZIP_BYTES = 100 * 1024 * 1024
+/** Max certificate-PDF size — mirrors backend certificate_pdf_max_bytes (25 MB). */
+const MAX_PDF_BYTES = 25 * 1024 * 1024
 
 /** Max student-photo size — mirrors backend certificate_photo_max_bytes (5 MB). */
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
@@ -68,9 +71,10 @@ export default function DocumentsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [photoTargetId, setPhotoTargetId] = useState<string | null>(null)
 
-  // Bulk upload (ZIP of recipients + photos) and bulk photos-only (later upload).
+  // Bulk upload (ZIP of recipients + photos), bulk photos-only, and BYO PDF.
   const [showBulk, setShowBulk] = useState(false)
   const [showPhotos, setShowPhotos] = useState(false)
+  const [showByoPdf, setShowByoPdf] = useState(false)
   const [classes, setClasses] = useState<BadgeClass[]>([])
 
   const load = () => {
@@ -248,6 +252,15 @@ export default function DocumentsPage() {
             <ImagePlus size={18} className="shrink-0" />
             Bulk photos
           </button>
+          <button
+            data-testid="docs-byo-pdf"
+            onClick={() => setShowByoPdf(true)}
+            className="flex items-center gap-2 whitespace-nowrap border border-gray-300 text-gray-700 px-3.5 py-2.5 rounded-lg hover:bg-gray-50 transition"
+            title="Issue a credential from your own pre-built certificate PDF (digitally signed)"
+          >
+            <FileSignature size={18} className="shrink-0" />
+            Upload PDF
+          </button>
           <Link
             to="/badges"
             className="flex items-center gap-2 whitespace-nowrap border border-gray-300 text-gray-700 px-3.5 py-2.5 rounded-lg hover:bg-gray-50 transition"
@@ -403,6 +416,158 @@ export default function DocumentsPage() {
           notify={notify}
         />
       )}
+
+      {showByoPdf && (
+        <ByoPdfModal
+          classes={classes}
+          onClose={() => setShowByoPdf(false)}
+          onDone={() => {
+            setShowByoPdf(false)
+            load()
+          }}
+          notify={notify}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Bring-your-own certificate PDF modal — issue a credential from a pre-built,
+ * tenant-designed PDF. The server malware-scans, digitally signs (issuer key),
+ * and stores it; the certificate download then returns this exact PDF. No
+ * template selection — the design is already in the PDF.
+ */
+function ByoPdfModal({
+  classes, onClose, onDone, notify,
+}: {
+  classes: BadgeClass[]
+  onClose: () => void
+  onDone: () => void
+  notify: (msg: string, kind?: 'success' | 'error') => void
+}) {
+  const [badgeClassId, setBadgeClassId] = useState<string>(classes[0]?.id ?? '')
+  const [beneficiaryId, setBeneficiaryId] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const pdfRef = useRef<HTMLInputElement>(null)
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0]
+    if (!picked) return
+    const isPdf = picked.name.toLowerCase().endsWith('.pdf') || picked.type === 'application/pdf'
+    if (!isPdf) {
+      notify('Please choose a .pdf file.', 'error')
+      return
+    }
+    if (picked.size > MAX_PDF_BYTES) {
+      notify('PDF exceeds the 25 MB limit.', 'error')
+      return
+    }
+    setFile(picked)
+  }
+
+  const submit = async () => {
+    if (!badgeClassId) {
+      notify('Choose a badge class.', 'error')
+      return
+    }
+    const email = beneficiaryId.trim()
+    if (!email.includes('@')) {
+      notify('Enter a valid recipient email.', 'error')
+      return
+    }
+    if (!file) {
+      notify('Choose a certificate PDF.', 'error')
+      return
+    }
+    setBusy(true)
+    setProgress(0)
+    try {
+      const res = await issueByoPdf(badgeClassId, email, file, setProgress)
+      notify(`Issued and signed certificate for ${email} (assertion ${res.assertion_id.slice(0, 8)}…).`)
+      onDone()
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: { message?: string } } } })
+        ?.response?.data?.detail?.message
+      notify(msg ? `PDF rejected: ${msg}` : 'Could not issue from the PDF.', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+        <div className="flex items-start justify-between mb-1">
+          <h2 className="text-lg font-semibold text-gray-900">Issue from your own certificate PDF</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          Upload a pre-built certificate <strong>.pdf</strong> (your own design). We digitally sign
+          it with your issuer key and issue it to the recipient — no template needed. The signed
+          PDF is what the recipient downloads and verifiers check.
+        </p>
+
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">Badge class</label>
+        <select
+          data-testid="docs-byo-class"
+          value={badgeClassId}
+          onChange={e => setBadgeClassId(e.target.value)}
+          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-brand-500 outline-none"
+        >
+          {classes.length === 0 && <option value="">No active badge classes</option>}
+          {classes.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">Recipient email</label>
+        <input
+          data-testid="docs-byo-recipient"
+          type="email"
+          value={beneficiaryId}
+          onChange={e => setBeneficiaryId(e.target.value)}
+          placeholder="student@example.com"
+          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-brand-500 outline-none"
+        />
+
+        <input ref={pdfRef} type="file" accept=".pdf,application/pdf" className="hidden"
+          data-testid="docs-byo-pdf-input" onChange={onFile} />
+        <button
+          type="button"
+          onClick={() => pdfRef.current?.click()}
+          data-testid="docs-byo-pdf-pick"
+          className="flex items-center gap-2 text-sm px-3 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 w-full justify-center"
+        >
+          <FileSignature size={16} />
+          {file ? `PDF: ${file.name}` : 'Choose certificate PDF'}
+        </button>
+        <p className="text-xs text-gray-400 mt-1">PDF up to 25 MB (uploaded directly to storage).</p>
+
+        {busy && progress > 0 && progress < 1 && (
+          <div className="mt-3">
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-brand-600 transition-all" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Uploading… {Math.round(progress * 100)}%</p>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+          <button
+            data-testid="docs-byo-submit"
+            onClick={submit}
+            disabled={!file || !badgeClassId || busy}
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-40"
+          >
+            <FileSignature size={16} />
+            {busy ? 'Uploading…' : 'Sign & issue'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

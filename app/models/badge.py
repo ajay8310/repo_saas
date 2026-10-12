@@ -94,6 +94,13 @@ class BadgeAssertion(Base):
     # Recipient (student) photo for certificate rendering + public verification
     # (U4). S3 key; served via presigned URL. Shown publicly only when public.
     recipient_photo_s3_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Bring-your-own certificate PDF: when set, the tenant supplied a pre-built
+    # certificate and the download returns this stored PDF instead of rendering a
+    # template. The PDF is digitally signed by the tenant's issuer key (RS256 JWS
+    # over the PDF's SHA-256), recorded here for verification.
+    certificate_pdf_s3_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    certificate_pdf_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    certificate_pdf_signature_jws: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

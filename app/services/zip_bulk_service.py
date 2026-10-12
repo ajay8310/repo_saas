@@ -146,7 +146,10 @@ class ZipBulkService:
             f"{upload_id}/upload.zip"
         )
         try:
-            url = self._s3.generate_presigned_url(
+            # Presign against the browser-reachable endpoint when configured
+            # (the internal 'localstack' host is not resolvable from the host).
+            presigner = self._presign_s3_client()
+            url = presigner.generate_presigned_url(
                 "put_object",
                 Params={
                     "Bucket": self.settings.s3_bucket_name,
@@ -160,6 +163,17 @@ class ZipBulkService:
             logger.error("Bulk ZIP presign failed: %s", exc)
             raise ZipBulkServiceUnavailableError("Storage service unavailable") from exc
         return url, key
+
+    def _presign_s3_client(self):
+        """S3 client pointed at the browser-reachable public endpoint (or internal)."""
+        public = self.settings.s3_public_endpoint_url
+        if not public:
+            return self._s3
+        kwargs: dict = {"region_name": self.settings.aws_region, "endpoint_url": public}
+        if self.settings.aws_access_key_id:
+            kwargs["aws_access_key_id"] = self.settings.aws_access_key_id
+            kwargs["aws_secret_access_key"] = self.settings.aws_secret_access_key
+        return boto3.client("s3", **kwargs)
 
     def parse_and_stage_from_key(self, tenant_id: UUID, zip_key: str) -> ZipBulkPlan:
         """Read a previously uploaded ZIP from S3 and parse+stage it.

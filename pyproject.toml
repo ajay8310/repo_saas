@@ -33,6 +33,8 @@ dependencies = [
     "pyld==2.0.4",
     "qrcode[pil]==7.4.2",
     "Pillow==10.3.0",
+    # PAdES PDF digital signatures (embedded, Adobe-verifiable)
+    "pyHanko==0.25.1",
     # Validation
     "pydantic==2.7.1",
     "pydantic-settings==2.2.1",

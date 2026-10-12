@@ -1034,3 +1034,52 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 - Matching is by email (filename stem `alice@example.com.png` or a `photos.csv` map). Default attaches to all of a recipient's active credentials; a badge-class filter is available.
 - API + worker restart required on deploy (new route + new task).
 ---
+## Bring-your-own certificate PDF (tenant-supplied, signed, no template)
+**Timestamp**: 2026-08-24T15:30:00Z
+**User Input**: "I also want that if some tenants wants to bring their certificate pdf along with metadata, they should be able to store and issue to the student. It should also follow the same mechanism of uploading data in S3 through pre-signed url. In such a case no template selection will be required since the pdf is already built on some design. We have to digitally sign and issue the certificate."
+**AI Response**: Added a BYO-PDF issuance path. The issuer uploads a pre-built certificate PDF via a presigned S3 PUT (same mechanism as the ZIP flow), the platform malware-scans it, digitally signs it with the tenant's existing RS256 issuer key (JWS over the PDF's SHA-256 — consistent with the platform's signing posture; no PAdES/new PDF-signing dependency), issues the assertion (name/validity from a chosen badge class, no template rendering), and stores the PDF. The certificate download returns the exact stored PDF.
+**Context**: New issuance mode alongside template-rendered certificates.
+### Backend
+- Migration `alembic/versions/009_byo_certificate_pdf.py`: adds `certificate_pdf_s3_key`, `certificate_pdf_sha256`, `certificate_pdf_signature_jws` to `badge_assertions` (ALTER cascades to partitions; table already has RLS from 005). Applied (008 -> 009).
+- `app/models/badge.py`: the three new nullable columns on `BadgeAssertion`.
+- `app/config.py`: `certificate_pdf_max_bytes` (25 MB), `certificate_pdf_presign_ttl_seconds` (900s).
+- `app/services/certificate_service.py`: `presign_certificate_pdf` (presigned PUT, application/pdf + SSE-KMS, size cap, per-upload key under `{prefix}/{tenant}/_pdf_uploads/`); `attach_certificate_pdf_from_key` (tenant-prefix guard, size re-check, read, then delete-after-read) + `attach_certificate_pdf` (content-type + %PDF- sanity + size checks, ClamAV scan fail-closed, SHA-256, `IssuerSigningService.sign` over `{assertion_id, pdf_sha256, issuer, issued_at}`, SSE-KMS put to a permanent `certificates/` key, records key+hash+JWS, audit `badge:certificate_pdf_attach`); returns `(key, sha256)`. `build_certificate` now branches: if `certificate_pdf_s3_key` is set, return the stored PDF verbatim (skips image/sign/render), still recording the viewed event + audit; falls back to render if the object is unexpectedly missing.
+- `app/routers/badges.py`: `POST /badges/pdf-upload/presign` (perm `badge:issue`, validates class, returns `{upload_url, pdf_key, max_bytes}`) and `POST /badges/issue-pdf` (perm `badge:issue`: `issue()` then `attach_certificate_pdf_from_key`; 422 `PDF_REJECTED` / 503 with the assertion_id if the PDF step fails after issuance). Models `CertificatePdfPresignRequest/Response`, `IssuePdfRequest/Response`.
+- `app/services/public_badge_service.py`: hosted assertion now exposes `signedPdfUrl` (presigned GET), `pdfSha256`, and `pdfSignatureJws` when the assertion is public, so a verifier can download the PDF, hash it, fetch the issuer key via the existing `issuerKeyUrl`, and verify the JWS.
+### Frontend
+- `frontend/src/lib/badges.ts`: `issueByoPdf(badgeClassId, beneficiaryId, file, onProgress?)` — presign -> raw `axios.put` to S3 (application/pdf + SSE-KMS headers, progress) -> `POST /badges/issue-pdf`; `IssuePdfResult`.
+- `frontend/src/pages/tenant/DocumentsPage.tsx`: new "Upload PDF" header action + `ByoPdfModal` (badge-class picker, recipient email, .pdf picker with 25 MB client cap, progress bar). Added `FileSignature` icon + `MAX_PDF_BYTES`.
+### Signing note / future upgrade
+- This is a JWS-over-PDF-hash signature recorded on the assertion and published for verification — it proves the issuer vouches for these exact bytes, matching the platform's existing posture. A true embedded PAdES/X.509 PDF signature would require provisioning signing certs + adding pyHanko/endesive; flagged as a future upgrade, not built.
+### Verification
+- Backend imports clean; config loaded (`certificate_pdf_max_bytes=26214400`). Migration applied. Frontend `tsc --noEmit` clean. Restarted the API to load the new endpoints.
+- Live E2E as ISSUER: oversize presign (50 MB) -> 422; presign -> 200 (max_bytes 25 MB, tenant `_pdf_uploads/` key); raw PUT -> 200; `issue-pdf` -> 201 with `certificate_pdf_s3_key` + `certificate_pdf_sha256`, expiry from the class; certificate download -> 200 and byte-for-byte equal to the uploaded PDF; reprocessing the deleted upload key -> 422.
+- Temp files cleaned (host + containers).
+### Notes
+- Reuses the existing badge class only for name/validity/active-status; `certificate_template`/`custom_template_id` are ignored on the BYO path.
+- API restart required on deploy (new routes). Real S3 needs bucket CORS allowing browser PUT (LocalStack dev does not).
+---
+## Stronger signature: embedded PAdES on bring-your-own PDFs
+**Timestamp**: 2026-08-24T16:30:00Z
+**User Input**: "Yes, give me stronger signature"
+**AI Response**: Upgraded the BYO-PDF signing from a JWS-over-hash (recorded beside the assertion) to a TRUE embedded PAdES signature inside the PDF (pyHanko) — the kind a PDF viewer shows in its signature panel. Signed with a self-signed X.509 cert derived from the tenant's existing RSA issuer key (trust anchor = the issuer's own cert; a CA-issued cert is a pluggable future upgrade). The JWS-over-hash is kept as a secondary, API-level attestation.
+**Context**: Follow-up to the BYO-PDF feature.
+### Backend
+- `pyproject.toml`: added `pyHanko==0.25.1`. (Installed into the running api container via pip for this session; a `docker compose build` is required to persist it in the image.)
+- Migration `alembic/versions/010_issuer_signing_cert.py`: adds `tenants.issuer_signing_cert` (PEM). Applied (009 -> 010).
+- `app/models/tenant.py`: `issuer_signing_cert` column.
+- `app/services/issuer_signing_service.py`: `ensure_signing_cert` (mints a self-signed X.509 cert from the tenant's RSA private key — CN = issuer name, OU = key id, 10-year validity, KeyUsage digital_signature + content_commitment/non-repudiation) and `signing_material` (returns `(private_pem, cert_pem)` for signing). Helper `_self_signed_cert_pem`.
+- `app/services/pdf_signer.py` (new): `sign_pdf_pades(pdf_bytes, private_key_pem, cert_pem, ...)` — loads the key via cryptography + cert via asn1crypto, builds a pyHanko `SimpleSigner`, appends an invisible sig field, and returns the PDF with an embedded PAdES-B signature covering the whole file. `PdfSignError` on failure.
+- `app/services/certificate_service.py`: `attach_certificate_pdf` now PAdES-signs the uploaded PDF **before** storage (behind `certificate_pdf_pades_enabled`), running pyHanko's sync `sign_pdf` via `asyncio.to_thread` (it internally calls `asyncio.run()`, which can't run in the request loop). On any signing failure it falls back to the unsigned bytes + logs a warning (the JWS still applies). The stored SHA-256 + JWS are computed over the signed bytes; `pdf_signed` flag recorded in audit.
+- `app/config.py`: `certificate_pdf_pades_enabled` (default true).
+- `app/routers/public_badges.py` + `public_badge_service.py`: hosted assertion now also exposes `pdfSignatureType="PAdES+JWS"` and `issuerCertUrl`; new public `GET /public/badges/issuers/{tenant}/cert` returns the issuer X.509 cert PEM (trust anchor for the embedded signature).
+### Verification
+- All backend modules import clean. Migration 010 applied. pyHanko self-test: signed a PDF, re-opened it, `validate_pdf_signature` -> intact + valid, coverage ENTIRE_FILE.
+- Diagnosed + fixed a real bug: pyHanko's sync signer calls `asyncio.run()` which raised inside the FastAPI event loop (silent fallback to unsigned); fixed by signing in a worker thread.
+- Live E2E as ISSUER: issue-pdf -> 201; certificate download grew from 1628 -> 7712 bytes (signature embedded); `embedded_signatures == 1`, `intact=True`, `valid=True`, coverage ENTIRE_FILE, signer CN "Demo University". (pyHanko logs a self-signed trust-path note, which is expected — the signature is cryptographically valid; trust anchor is the published issuer cert.)
+- Temp files cleaned (host + container).
+### Trust posture / future upgrade
+- The embedded signature is cryptographically valid and anchored to the tenant's self-signed issuer cert (published at issuerCertUrl). A PDF viewer shows "valid signature, signer not chained to a trusted CA" until the issuer cert is trusted or the tenant supplies a CA-issued signing cert — `pdf_signer` accepts any key+cert, so dropping in a CA cert needs no code change.
+### Ops
+- `pyHanko` is pip-installed in the running api container only; run `docker compose build api worker` (pyproject already updated) to bake it into the images. API restart required for the new routes/signing code.
+---

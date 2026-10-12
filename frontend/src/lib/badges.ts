@@ -115,6 +115,58 @@ export async function issueBadge(
   return data
 }
 
+export interface IssuePdfResult {
+  assertion_id: string
+  badge_class_id: string
+  beneficiary_id: string
+  issued_at: string
+  expires_at: string | null
+  status: string
+  certificate_pdf_s3_key: string
+  certificate_pdf_sha256: string | null
+}
+
+interface CertificatePdfPresign {
+  upload_url: string
+  pdf_key: string
+  max_bytes: number
+}
+
+/**
+ * Bring-your-own certificate PDF: issue a credential backed by a tenant-supplied,
+ * pre-built PDF (no template). Presign -> PUT raw PDF to S3 -> issue + sign.
+ *
+ * The server malware-scans the PDF, issues the assertion (name/validity from the
+ * chosen badge class), digitally signs the PDF with the tenant issuer key, and
+ * stores it. The certificate download then returns this exact PDF.
+ */
+export async function issueByoPdf(
+  badgeClassId: string,
+  beneficiaryId: string,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<IssuePdfResult> {
+  const { data: presign } = await api.post<CertificatePdfPresign>(
+    '/badges/pdf-upload/presign',
+    { badge_class_id: badgeClassId, size_bytes: file.size },
+  )
+  await axios.put(presign.upload_url, file, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'x-amz-server-side-encryption': 'aws:kms',
+    },
+    onUploadProgress: e => {
+      if (onProgress && e.total) onProgress(e.loaded / e.total)
+    },
+  })
+  const { data } = await api.post<IssuePdfResult>('/badges/issue-pdf', {
+    badge_class_id: badgeClassId,
+    beneficiary_id: beneficiaryId,
+    pdf_key: presign.pdf_key,
+  })
+  return data
+}
+
 export async function bulkIssueBadges(
   badgeClassId: string,
   beneficiaryIds: string[],

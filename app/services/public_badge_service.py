@@ -113,6 +113,30 @@ class PublicBadgeService:
                 ).presigned_image_url(assertion.recipient_photo_s3_key)
             except Exception:
                 logger.debug("Could not presign recipient photo", exc_info=True)
+        # Bring-your-own signed certificate PDF: when the tenant supplied a
+        # pre-built, signed PDF, expose a short-lived download link plus the
+        # signature material so a verifier can download the PDF, hash it, fetch
+        # the issuer key below, and verify the RS256 JWS over its SHA-256.
+        if assertion.certificate_pdf_s3_key:
+            try:
+                from app.services.badge_service import BadgeService
+
+                doc["signedPdfUrl"] = BadgeService(
+                    db=self.db, settings=self.settings
+                ).presigned_image_url(assertion.certificate_pdf_s3_key)
+                if assertion.certificate_pdf_sha256:
+                    doc["pdfSha256"] = assertion.certificate_pdf_sha256
+                if assertion.certificate_pdf_signature_jws:
+                    doc["pdfSignatureJws"] = assertion.certificate_pdf_signature_jws
+                # The PDF also carries an embedded PAdES signature a viewer can
+                # validate; the issuer cert is published at issuerCertUrl.
+                doc["pdfSignatureType"] = "PAdES+JWS"
+                doc["issuerCertUrl"] = (
+                    f"{self.settings.public_base_url}"
+                    f"/api/v1/public/badges/issuers/{assertion.tenant_id}/cert"
+                )
+            except Exception:
+                logger.debug("Could not presign signed certificate PDF", exc_info=True)
         # Reference the issuer key so a verifier can locate the signing public key.
         doc["issuerKeyUrl"] = (
             f"{self.settings.public_base_url}"
@@ -134,6 +158,20 @@ class PublicBadgeService:
 
         signing = IssuerSigningService(db=self.db, settings=self.settings)
         return await signing.public_jwk_reference(tenant_id)
+
+    async def get_issuer_cert_pem(self, tenant_id: UUID) -> str | None:
+        """Return the issuer's X.509 signing certificate PEM (trust anchor).
+
+        Generates key + cert lazily if absent. Verifiers use this to validate the
+        embedded PAdES signature on a tenant-supplied certificate PDF.
+        """
+        tenant = await self._get_tenant(tenant_id)
+        if tenant is None:
+            return None
+        from app.services.issuer_signing_service import IssuerSigningService
+
+        signing = IssuerSigningService(db=self.db, settings=self.settings)
+        return await signing.ensure_signing_cert(tenant_id)
 
     # ------------------------------------------------------------------
     # Hosted badge class

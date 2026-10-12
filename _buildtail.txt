@@ -1,0 +1,13 @@
+﻿#14 [api] exporting to image
+#14 unpacking to docker.io/library/repo_as_saas-api:latest 7.5s done
+#14 DONE 12.7s
+
+#16 [api] resolving provenance for metadata file
+#16 DONE 0.1s
+ Image repo_as_saas-api Built 
+ Image repo_as_saas-worker Built 
+
+repo_as_saas-api:latest 19 seconds ago
+repo_as_saas-worker:latest 36 seconds ago
+
+
