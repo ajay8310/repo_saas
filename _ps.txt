@@ -1,0 +1,8 @@
+﻿repo_as_saas-api-1 | Up About an hour
+repo_as_saas-worker-1 | Up About an hour
+repo_as_saas-frontend-1 | Up 5 hours
+repo_as_saas-postgres-1 | Up 5 hours (healthy)
+repo_as_saas-redis-1 | Up 5 hours (healthy)
+repo_as_saas-beat-1 | Up 5 hours
+repo_as_saas-localstack-1 | Up 5 hours (healthy)
+repo_as_saas-clamav-1 | Up 5 hours (healthy)

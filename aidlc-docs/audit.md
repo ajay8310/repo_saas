@@ -1105,3 +1105,17 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 - CORS now seeded automatically. For a real (non-LocalStack) S3 bucket, apply an equivalent CORS rule scoped to the real frontend origin (not '*').
 - pyHanko is baked into the api/worker images (built this session); PAdES signing works without any pip install.
 ---
+
+## End-to-End Persistence Test (All Workflows)
+**Timestamp**: 2026-08-24T00:00:00Z
+**User Input**: "Test the complete software end to end with all workflows and make sure data is getting saved in backend. Make fixes wherver required."
+**AI Response**: "Built and ran a comprehensive E2E persistence test (`_e2e.py`) inside the api container. It exercises every workflow via the live HTTP API (dev-token auth for tenant_admin/issuer/beneficiary) and asserts data actually persisted by reading rows back under RLS tenant context, confirming S3 objects via boto3 head_object, and checking audit_logs entries.
+
+Two defects found and fixed:
+1. **Document upload broken out of the box (local/demo).** The seeded demo tenant had NO `tenant_encryption_keys` row, and `TenantService` writes a placeholder CMK ARN (`key/{tenant_id}`) that does not exist in LocalStack KMS, so `kms.encrypt` fails with NotFoundException and uploads would 500. Fix: added `_ensure_kms_key()` to `app/seed_demo.py` — it creates a real LocalStack KMS key and records its ARN in `tenant_encryption_keys` (idempotent; recreates if the key was wiped by a LocalStack reset). Verified the demo tenant now has an active CMK and document upload succeeds (ciphertext written to S3, encrypted_dek stored, audit entry created).
+2. **Issuer could not create badge classes (403).** The frontend `BadgeClassesPage` is gated by ISSUING_ROLES (super_admin, tenant_admin, issuer) and calls `POST /badges/classes` (require_permission `badge:create`), but the `issuer` role in `app/rbac/permissions.py` lacked `badge:create`/`badge:deactivate`, so an issuer got 403. Fix: added `badge:create` and `badge:deactivate` to the issuer role (issuer already had badge:update/issue/revoke), matching the frontend and the seed which creates classes with actor_role=issuer.
+
+Results: E2E suite 21/21 PASS covering auth/tenant, schema (+versions), document upload (KMS->S3 + DB + audit), verification token, notification preferences, webhook, privacy consent, badge class, badge image (S3), badge issue (+badge_events issued), wallet publish (+badge_events published + hosted public page), certificate template, and audit-log read. Unit suite 200/200 PASS after the changes. Flagged for production: the seed KMS/CORS helpers are dev-only (environment==development); production should scope S3 CORS AllowedOrigins to the real frontend origin and provision real KMS CMKs out of band."
+**Context**: Full end-to-end verification of backend persistence across all workflows; fixed demo KMS provisioning and issuer badge:create RBAC gap.
+
+---

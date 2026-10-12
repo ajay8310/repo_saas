@@ -367,6 +367,74 @@ def _ensure_bucket() -> None:
         logger.warning("Demo seed: could not set bucket CORS: %s", exc)
 
 
+async def _ensure_kms_key(db, tenant: Tenant) -> None:
+    """Ensure the demo tenant has a usable CMK in LocalStack KMS.
+
+    The document upload workflow envelope-encrypts each DEK with the tenant's
+    CMK via ``kms.encrypt(KeyId=<arn>)``. The placeholder ARN written by
+    ``TenantService`` (``key/{tenant_id}``) does not exist in LocalStack, so an
+    upload would fail with ``NotFoundException``. Here we create a real
+    LocalStack KMS key and record its ARN in ``tenant_encryption_keys`` so the
+    demo upload path works out of the box. Idempotent: skips if an active key
+    row already exists and the referenced key is still present in KMS.
+    """
+    from sqlalchemy import select as _select
+
+    from app.models.tenant import TenantEncryptionKey
+
+    s = get_settings()
+    if not s.kms_endpoint_url:
+        return  # real AWS — keys provisioned out of band
+
+    import boto3
+
+    kms_kwargs: dict = {"region_name": s.aws_region, "endpoint_url": s.kms_endpoint_url}
+    if s.aws_access_key_id:
+        kms_kwargs["aws_access_key_id"] = s.aws_access_key_id
+        kms_kwargs["aws_secret_access_key"] = s.aws_secret_access_key
+    kms = boto3.client("kms", **kms_kwargs)
+
+    existing = (
+        await db.execute(
+            _select(TenantEncryptionKey).where(
+                TenantEncryptionKey.tenant_id == tenant.id,
+                TenantEncryptionKey.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        # Verify the referenced key still exists in LocalStack (it may have been
+        # reset). describe_key accepts a full ARN.
+        try:
+            kms.describe_key(KeyId=existing.kms_key_arn)
+            logger.info("Demo seed: tenant CMK already present (%s)", existing.kms_key_arn)
+            return
+        except Exception:  # noqa: BLE001 - key missing after reset; recreate below
+            logger.info("Demo seed: recorded CMK missing in KMS; recreating")
+
+    try:
+        created = kms.create_key(Description=f"Demo CMK for tenant {tenant.id}")
+        arn = created["KeyMetadata"]["Arn"]
+    except Exception as exc:  # noqa: BLE001 - non-fatal for seeding
+        logger.warning("Demo seed: could not create KMS key: %s", exc)
+        return
+
+    if existing is not None:
+        existing.kms_key_arn = arn
+        existing.status = "active"
+    else:
+        db.add(
+            TenantEncryptionKey(
+                tenant_id=tenant.id,
+                kms_key_arn=arn,
+                status="active",
+            )
+        )
+    await db.commit()
+    logger.info("Demo seed: provisioned tenant CMK %s", arn)
+
+
 async def _ensure_tenant(db) -> Tenant:
     tenant = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
     if tenant is None:
@@ -532,6 +600,7 @@ async def seed() -> None:
     _ensure_bucket()
     async with AsyncSessionLocal() as db:
         tenant = await _ensure_tenant(db)
+        await _ensure_kms_key(db, tenant)
         await _ensure_badge_and_assertion(db, tenant)
     logger.info("Demo seed: complete")
 

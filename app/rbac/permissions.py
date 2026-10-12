@@ -61,9 +61,13 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "document:upload", "document:read", "document:download", "document:list",
         "document:revoke", "document:bulk_upload", "document:bulk_revoke",
         "search:query",
-        # badge:update lets an issuer attach a recipient (student) photo to an
-        # assertion they issued, via POST /badges/assertions/{id}/photo.
-        "badge:read", "badge:update", "badge:issue", "badge:bulk_issue", "badge:revoke",
+        # The issuer badge console (frontend ISSUING_ROLES) lets an issuer
+        # create and manage badge classes, so the issuer role carries the full
+        # class-management set. badge:update also lets an issuer attach a
+        # recipient (student) photo to an assertion they issued, via
+        # POST /badges/assertions/{id}/photo.
+        "badge:create", "badge:read", "badge:update", "badge:deactivate",
+        "badge:issue", "badge:bulk_issue", "badge:revoke",
         "badge:certificate", "badge:analytics",
         "badge:template_manage",
     },
