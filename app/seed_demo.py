@@ -343,6 +343,29 @@ def _ensure_bucket() -> None:
             c.create_bucket(Bucket=s.s3_bucket_name)
         logger.info("Demo seed: created S3 bucket %s", s.s3_bucket_name)
 
+    # Allow the browser to PUT/GET directly to S3 via presigned URLs (the
+    # BYO-PDF and bulk-ZIP uploads go straight from the browser). Without a CORS
+    # rule the browser's preflight is rejected and the upload fails. Applied on
+    # every seed run so it is present even for a pre-existing bucket.
+    try:
+        c.put_bucket_cors(
+            Bucket=s.s3_bucket_name,
+            CORSConfiguration={
+                "CORSRules": [
+                    {
+                        "AllowedOrigins": ["*"],
+                        "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
+                        "AllowedHeaders": ["*"],
+                        "ExposeHeaders": ["ETag"],
+                        "MaxAgeSeconds": 3600,
+                    }
+                ]
+            },
+        )
+        logger.info("Demo seed: applied CORS policy to bucket %s", s.s3_bucket_name)
+    except Exception as exc:  # noqa: BLE001 - non-fatal for seeding
+        logger.warning("Demo seed: could not set bucket CORS: %s", exc)
+
 
 async def _ensure_tenant(db) -> Tenant:
     tenant = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
