@@ -1083,3 +1083,25 @@ Clarified to user: a QR cannot physically carry a photo; QR links to the public 
 ### Ops
 - `pyHanko` is pip-installed in the running api container only; run `docker compose build api worker` (pyproject already updated) to bake it into the images. API restart required for the new routes/signing code.
 ---
+## Fix: browser upload blocked by missing S3 CORS (BYO-PDF / bulk uploads)
+**Timestamp**: 2026-08-24T17:30:00Z
+**User Input**: "it is still the same issue. Please test all the functionalties end to end by running all test cases and make the fixes wherever needed."
+**AI Response**: Found the true root cause of "Could not issue from the PDF": the browser's direct-to-S3 presigned PUT was blocked by a CORS preflight (OPTIONS from Origin http://localhost:3000) returning 403 with no Access-Control-* headers, because the LocalStack bucket had NO CORS policy. Command-line clients (my earlier tests) don't do preflight, which is why they passed and the browser failed. Fixed by applying a bucket CORS policy.
+**Context**: Follow-on to the presigned-endpoint-host fix (localstack->localhost).
+### Fix
+- `app/seed_demo.py` `_ensure_bucket`: after create/head, now calls `put_bucket_cors` (AllowedOrigins ['*'], AllowedMethods GET/PUT/POST/HEAD, AllowedHeaders ['*'], ExposeHeaders ETag, MaxAge 3600) on every seed run so the browser's preflight to the presigned URL succeeds. Applied immediately to the running bucket too.
+- Verified: CORS preflight to the bucket now returns 200 with `Access-Control-Allow-Origin: *` + allowed methods/headers (was 403).
+### Full end-to-end testing (this request)
+- **Unit suite: 200 passed** (`tests/unit`, 9.3s) on the freshly-built image — no regressions from all the BYO/PAdES/presign/CORS changes.
+- **Host (browser-equivalent) E2E** — presigned uploads go to localhost:4566 then API processes by key:
+  - BYO PDF: presign host = localhost; direct-to-S3 PUT ok; issue-pdf 201; certificate download **PAdES-signed** (real PDF 1417 -> 7498 bytes, RESULT=PADES_OK; embedded signature intact+valid verified earlier).
+  - Standard single issue + rendered certificate + badge.json download: pass (in-container run).
+  - Issue-with-inline-photo: 201 has_photo=true.
+  - Bulk-ZIP issue: presign + PUT + 202 (manifest parsed).
+  - Bulk-photos-only: presign + PUT + 202 attach.
+  - Beneficiary wallet + public hosted assertion: resolve.
+  - Two "failures" in the scripted sweep were test-fixture artifacts (a hand-crafted stub PDF with no xref that pyHanko legitimately can't sign -> fell back unsigned; a Compress-Archive path-nesting quirk that broke photo filename matching), NOT product bugs — both confirmed working with correct inputs.
+### Notes / ops
+- CORS now seeded automatically. For a real (non-LocalStack) S3 bucket, apply an equivalent CORS rule scoped to the real frontend origin (not '*').
+- pyHanko is baked into the api/worker images (built this session); PAdES signing works without any pip install.
+---
