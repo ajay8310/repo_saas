@@ -338,6 +338,11 @@ class CertificateService:
                 # pyHanko's sync sign_pdf internally calls asyncio.run(), which
                 # cannot run inside this request's event loop — run it in a
                 # worker thread so it gets its own loop.
+                signed_date = (
+                    assertion.issued_at.strftime("%d %b %Y")
+                    if assertion.issued_at
+                    else ""
+                )
                 signed = await _asyncio.to_thread(
                     _functools.partial(
                         sign_pdf_pades,
@@ -346,6 +351,8 @@ class CertificateService:
                         cert_pem=cert_pem,
                         reason="Issued and signed by the credential issuer",
                         location=issuer_name,
+                        signer_name=issuer_name,
+                        signed_date=signed_date,
                     )
                 )
                 pdf_signed = True

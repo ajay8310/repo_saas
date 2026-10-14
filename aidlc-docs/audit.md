@@ -1119,3 +1119,21 @@ Results: E2E suite 21/21 PASS covering auth/tenant, schema (+versions), document
 **Context**: Full end-to-end verification of backend persistence across all workflows; fixed demo KMS provisioning and issuer badge:create RBAC gap.
 
 ---
+
+## Visible Digital Signature (green tick) on Certificate PDFs
+**Timestamp**: 2026-08-24T00:00:00Z
+**User Input**: "can we show Digital Signature as a tick mark on pdf certificates so that it looks like a valid signature?" / "yes"
+**AI Response**: "Added a visible signature appearance to the existing embedded PAdES signature. The appearance is a rounded card with a green check mark plus 'Digitally Signed / by {issuer} / {date}', drawn in the bottom-right of the certificate's first page. It is NOT decoration — it is the visible rendering of the real cryptographic signature already embedded by `app/services/pdf_signer.py`.
+
+Implementation:
+- `app/services/pdf_signer.py`: `sign_pdf_pades()` now takes `signer_name`, `signed_date`, and `visible` (default True). When visible, it computes a bottom-right box from the first page MediaBox (`_bottom_right_box`), builds a `TextStampStyle` whose background is a Pillow-rendered PNG (`_stamp_png`: green tick + issuer + date, drawn at 4x and downscaled), and signs via `PdfSigner(meta, signer, stamp_style=...)`. If the page geometry can't be read it falls back to the previous invisible zero-area field; any signing error still raises `PdfSignError` so the caller falls back to the unsigned PDF (issuance never fails).
+- `app/services/certificate_service.py`: passes `signer_name=issuer_name` and `signed_date=assertion.issued_at` (formatted '%d %b %Y') into the signer. Covers both the BYO-PDF and render-then-sign paths (single call site).
+
+Fix found during testing: `PdfImage` needs a PIL Image, not a BytesIO (`'_io.BytesIO' object has no attribute 'width'`); switched to `PdfImage(Image.open(BytesIO(png)))`.
+
+Verification (authoritative, inside api container with pyHanko 0.25.1): generated an RSA key + self-signed cert, rendered an A4 PDF, signed it — output embeds exactly ONE signature (pyHanko `embedded_signatures`), `/ByteRange` present, field `IssuerSignature`, signed PDF larger than input. Rendered the stamp PNG and visually confirmed the green tick + text. Added `tests/unit/test_pdf_signer.py` (5 tests: stamp PNG valid, handles empty name, visible signature embeds one sig, invisible fallback still signs, bad key raises) — all pass. Full unit suite remains 200 passing (205 with the new file).
+
+Trust caveat documented (A2): the issuer cert is self-signed, so Adobe/PDF viewers show the signature as valid-but-not-trusted (yellow) until the issuer cert is trusted or replaced with a CA/AATL-issued cert. The visible tick honestly reflects that a genuine signature is present; it does NOT assert CA-level trust. To get a no-warning green tick in Adobe with no manual step, drop a CA-issued (or AATL) cert+key into the issuer signing material — `pdf_signer.py` signs with whatever cert/key it is given, so no code change is needed for that upgrade."
+**Context**: Added honest visible signature appearance (green tick) backed by the real embedded PAdES signature; documented the CA-trust upgrade path.
+
+---
